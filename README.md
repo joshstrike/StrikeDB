@@ -1,5 +1,5 @@
-## **StrikeDB
-# *Promisified server-side prepared statements for node mysqljs
+## **StrikeDB**
+### **Promisified server-side prepared statements for node mysqljs**
 
 **What:** StrikeDB is a set of wrappers to promisify node-mysql (mysqljs) functions, intended so you can easily use node-mysql with async / await. It also adds prepared statements, both emulated and server-side, and handy null-safe variable binding. The goal is to make node-mysql calls a little more like the synchronous PDO model. It also has the advantage of being able to execute the same prepared statement lots of times asynchronously and awaiting all of them, which you can't do in PHP.
 
