@@ -67,8 +67,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         /**
          * Helper for WHERE `id` IN (1,2) statements. Example:
          *
-         * let idHelper:DBInHelper = DBUtil.GetInHelper('id',[1,2]);
-         * let stm:DBStatement = await conn.prepare(`SELECT * FROM table WHERE id IN (${idHelper.sql})`);
+         * let idHelper:InHelper = Util.GetInHelper('id',[1,2]);
+         * let stm:Statement = await conn.prepare(`SELECT * FROM table WHERE id IN (${idHelper.sql})`);
          * await stm.execute(Object.assign({table:'games',field:'homeID'},i.keyvals)); //merge the helper's pairs into the bind object.
          *
          * @param name a unique name for the set.
@@ -114,11 +114,11 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         function Statement(_dbc, _emulateSQL) {
             this._dbc = _dbc;
             this._emulateSQL = _emulateSQL;
-            this.prepID = null; //set from DBConnection.prepare();
-            this.keys = null; //set from DBConnection.prepare();
+            this.prepID = null; //set from Connection.prepare();
+            this.keys = null; //set from Connection.prepare();
             this.useID = 0;
         }
-        //returnNew yields a new DBStatement, as opposed to returning _this_. The most recent result is available on _this_, but 
+        //returnNew yields a new Statement, as opposed to returning _this_. The most recent result is available on _this_, but 
         //at times if you're running a loop. 
         Statement.prototype.execute = function (values, returnNew) {
             return __awaiter(this, void 0, void 0, function () {

@@ -2,11 +2,11 @@
 
 import * as mysql from 'mysql';
 
-export type DBBinding = {start:number,end:number,name:string,field:boolean};
+export type Binding = {start:number,end:number,name:string,field:boolean};
 export class BindParser {
     public static BindingCharRx:RegExp = /\w/; //Note: bound names must be only \w strings or parsing will fail. Extend this if needed.
-    public static ParseBindings(sql:string):DBBinding[] {
-        let bindings:DBBinding[] = [];
+    public static ParseBindings(sql:string):Binding[] {
+        let bindings:Binding[] = [];
         let i:number = 0;
         let lookahead:string = sql[i];
         while (lookahead) {
@@ -69,8 +69,8 @@ export class BindParser {
         }
     }
     
-    public static InlineBindings(sql:string):{newSql:string,bindings:DBBinding[]} {
-        let res:{newSql:string,bindings:DBBinding[]} = {newSql:'',bindings:this.ParseBindings(sql)};
+    public static InlineBindings(sql:string):{newSql:string,bindings:Binding[]} {
+        let res:{newSql:string,bindings:Binding[]} = {newSql:'',bindings:this.ParseBindings(sql)};
         const bindingNames:Set<string> = new Set(res.bindings.map(b => b.name));
 
         let lastIndex:number = 0;
@@ -86,7 +86,7 @@ export class BindParser {
     }
     
     public static ReplaceNamedBindings(values:{[key:string]:string}, sql:string):string {
-        const bindings:DBBinding[] = this.ParseBindings(sql);
+        const bindings:Binding[] = this.ParseBindings(sql);
         const bindingNames:Set<string> = new Set(bindings.map(b => b.name));
         const unknownBinding:string = Object.keys(values).find((k:string) => !bindingNames.has(k));
 

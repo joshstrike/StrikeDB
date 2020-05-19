@@ -1,10 +1,10 @@
 import * as mysql from 'mysql';
 import * as util from 'util';
-import { BindParser, DBBinding } from './BindParser';
+import { BindParser, Binding } from './BindParser';
 
 //leave this pretty loosely typed, generally we're expecting either an OKPacket or a rowset. @TODO tweak this for nested tables? Nah. That's a bad paradigm.
-export type DBResult = mysql.OkPacket&any[];
-export type DBRejection = {err:mysql.MysqlError|{message:string}};
+export type Result = mysql.OkPacket&any[];
+export type Rejection = {err:mysql.MysqlError|{message:string}};
 
 class NameFactory {
     private static _NUM:number = 0; //numbering of statement names.
@@ -19,8 +19,8 @@ export class Util {
     /**
      * Helper for WHERE `id` IN (1,2) statements. Example:
      * 
-     * let idHelper:DBInHelper = DBUtil.GetInHelper('id',[1,2]);
-     * let stm:DBStatement = await conn.prepare(`SELECT * FROM table WHERE id IN (${idHelper.sql})`);
+     * let idHelper:InHelper = Util.GetInHelper('id',[1,2]);
+     * let stm:Statement = await conn.prepare(`SELECT * FROM table WHERE id IN (${idHelper.sql})`);
      * await stm.execute(Object.assign({table:'games',field:'homeID'},i.keyvals)); //merge the helper's pairs into the bind object.
      * 
      * @param name a unique name for the set.
@@ -52,15 +52,15 @@ export class Pool {
 
 export class Statement {
     public err:mysql.MysqlError|{message:string};
-    public result:DBResult;
+    public result:Result;
     public fields:mysql.FieldInfo[];
-    public prepID:number = null; //set from DBConnection.prepare();
-    public keys:DBBinding[] = null; //set from DBConnection.prepare();
+    public prepID:number = null; //set from Connection.prepare();
+    public keys:Binding[] = null; //set from Connection.prepare();
     public useID:number = 0;
 
     public constructor(private _dbc:Connection, private _emulateSQL?:string) {}
     
-    //returnNew yields a new DBStatement, as opposed to returning _this_. The most recent result is available on _this_, but 
+    //returnNew yields a new Statement, as opposed to returning _this_. The most recent result is available on _this_, but 
     //at times if you're running a loop. 
     public async execute(values?:any,returnNew?:boolean):Promise<Statement> {
         let v:any[] = [];
@@ -157,7 +157,7 @@ export class Statement {
 }
 
 export class Connection {
-    private _lastResult:DBResult;
+    private _lastResult:Result;
     private _lastFields:mysql.FieldInfo[];
     private _allocatedStatements:number[] = [];
     public constructor(public conn?:mysql.PoolConnection, public err?:mysql.MysqlError|{message:string,fatal?:string}, public rejectErrors:boolean = true, public logQueries?:boolean) {}
@@ -222,8 +222,8 @@ export class Connection {
     public async prepare(sql:string,emulate?:boolean):Promise<Statement> {
         let prepID:number = NameFactory.NUM;
     
-        let keys:DBBinding[]; //leave statement keys undefined if passing an array of values for ? ...define only if rewriting the query.
-        let bindingRes:{newSql:string,bindings:DBBinding[]} = BindParser.InlineBindings(sql);
+        let keys:Binding[]; //leave statement keys undefined if passing an array of values for ? ...define only if rewriting the query.
+        let bindingRes:{newSql:string,bindings:Binding[]} = BindParser.InlineBindings(sql);
         if (bindingRes.bindings.length) {
             sql = bindingRes.newSql;
             keys = bindingRes.bindings;
