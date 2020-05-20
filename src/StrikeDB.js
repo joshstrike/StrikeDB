@@ -111,9 +111,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }());
     exports.Pool = Pool;
     var Statement = (function () {
-        function Statement(_dbc, _emulateSQL) {
+        function Statement(_dbc, _emulateSQL, _execOpts) {
             this._dbc = _dbc;
             this._emulateSQL = _emulateSQL;
+            this._execOpts = _execOpts;
             this.prepID = null; //set from Connection.prepare();
             this.keys = null; //set from Connection.prepare();
             this.useID = 0;
@@ -123,10 +124,15 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         Statement.prototype.execute = function (values, returnNew) {
             return __awaiter(this, void 0, void 0, function () {
                 var _this = this;
-                var v, bindError, varstr, _s, stm;
+                var timeout, nestTables, typeCast, v, bindError, varstr, _s, stm;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
+                            if (this._execOpts) {
+                                timeout = this._execOpts.timeout;
+                                nestTables = this._execOpts.nestTables;
+                                typeCast = this._execOpts.typeCast;
+                            }
                             v = [];
                             if (!this.keys) {
                                 v = values;
@@ -148,7 +154,14 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 }
                             }
                             if (this._emulateSQL)
-                                return [2 /*return*/, (this._emulatedExecute(v, returnNew))];
+                                return [2 /*return*/, (this._emulatedExecute({ sql: this._emulateSQL, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }, returnNew))];
+                            if (this.prepID === null && !this.err) {
+                                //throw new Error('Attempted to execute unprepared statement.');
+                                this.err = this._dbc.err = { message: "Attempted to execute an unprepared statement. Statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement." };
+                                if (this._dbc.rejectErrors)
+                                    return [2 /*return*/, Promise.reject(this)];
+                                return [2 /*return*/, (this)];
+                            }
                             return [4 /*yield*/, this._use(v)];
                         case 1:
                             varstr = _a.sent();
@@ -161,7 +174,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             _s = "EXECUTE stm_" + this.prepID + " " + varstr + ";";
                             if (this._dbc.logQueries)
                                 console.log(_s);
-                            return [4 /*yield*/, this._dbc._query({ sql: _s }).catch(function (e) { return (e); })];
+                            return [4 /*yield*/, this._dbc._query({ sql: _s, timeout: timeout, nestTables: nestTables, typeCast: typeCast }).catch(function (e) { return (e); })];
                         case 2:
                             stm = _a.sent();
                             if (stm.err) {
@@ -182,12 +195,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
          * Alternate shunt for executing w/o actually setting up a server prepared statement.
          * @param values
          */
-        Statement.prototype._emulatedExecute = function (values, returnNew) {
+        Statement.prototype._emulatedExecute = function (opts, returnNew) {
             return __awaiter(this, void 0, void 0, function () {
                 var stm;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
-                        case 0: return [4 /*yield*/, this._dbc._act('query', { sql: this._emulateSQL, values: values })];
+                        case 0: return [4 /*yield*/, this._dbc._act('query', opts)];
                         case 1:
                             stm = _a.sent();
                             stm._emulateSQL = this._emulateSQL;
@@ -197,7 +210,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     return [2 /*return*/, Promise.reject(stm)];
                             }
                             if (this._dbc.logQueries)
-                                console.log('Executed (emulated):', this._emulateSQL, 'with', values);
+                                console.log('Executed (emulated):', this._emulateSQL, 'with', opts.values);
                             if (returnNew)
                                 return [2 /*return*/, (stm)];
                             //copy the newly generated stm values to this.
@@ -226,7 +239,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
                             //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
                             this.useID = (this.useID + 1) % 999;
-                            varstr = " USING ";
+                            varstr = "USING ";
                             p = [];
                             for (k = 0; k < values.length; k++) {
                                 _val = values[k] === null ? 'null' : "'" + values[k] + "'";
@@ -275,7 +288,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             this._allocatedStatements = [];
         }
         /**
-         * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a DBResult or MysqlError.
+         * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Statement.
+         * The statement is never prepared or executed, it is just assembled here from the options and the call's result.
          * @param func
          * @param opts
          * @param overwriteResult
@@ -289,7 +303,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
-                            stm = new Statement(this);
+                            stm = new Statement(this, null, opts);
                             if (!this.conn || (this.err && this.err.fatal)) {
                                 stm.err = this.err;
                                 if (this.rejectErrors || forceRejectErrors)
@@ -364,13 +378,15 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
-        Connection.prototype.prepare = function (sql, emulate) {
+        Connection.prototype.prepare = function (opts, emulate) {
             return __awaiter(this, void 0, void 0, function () {
-                var prepID, keys, bindingRes, _i, _a, b, stm_1, s, _s, stm;
+                var prepID, sql, execOpts, keys, bindingRes, _i, _a, b, stm_1, s, _s, stm;
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0:
                             prepID = NameFactory.NUM;
+                            sql = opts.sql;
+                            execOpts = { timeout: opts.timeout, nestTables: opts.nestTables, typeCast: opts.typeCast };
                             bindingRes = BindParser_1.BindParser.InlineBindings(sql);
                             if (bindingRes.bindings.length) {
                                 sql = bindingRes.newSql;
@@ -393,7 +409,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g, '$1<$3>$5'); //convert all `field`=? to the null-safe <=>
                             sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g, '!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
                             if (emulate) {
-                                s = new Statement(this, sql);
+                                s = new Statement(this, sql, execOpts);
                                 if (this.logQueries)
                                     console.log('Prepared (emulated):', sql);
                                 s.keys = keys;
@@ -404,7 +420,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             _s = "PREPARE stm_" + prepID + " FROM '" + sql + "';";
                             if (this.logQueries)
                                 console.log(_s);
-                            return [4 /*yield*/, this._query({ sql: _s })];
+                            return [4 /*yield*/, this._query({ sql: _s, timeout: execOpts.timeout, nestTables: execOpts.nestTables, typeCast: execOpts.typeCast })];
                         case 1:
                             stm = _b.sent();
                             stm.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
@@ -422,7 +438,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 var stm, output;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
-                        case 0: return [4 /*yield*/, this.prepare(opts.sql, emulate).catch(function (e) { return (e); })];
+                        case 0: return [4 /*yield*/, this.prepare(opts, emulate).catch(function (e) { return (e); })];
                         case 1:
                             stm = _a.sent();
                             if (stm.err) {
@@ -430,7 +446,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     return [2 /*return*/, Promise.reject(stm)];
                                 return [2 /*return*/, (stm)];
                             }
-                            return [4 /*yield*/, stm.execute(opts.values).catch(function (e) { return (e); })];
+                            return [4 /*yield*/, stm.execute(opts.values, false).catch(function (e) { return (e); })];
                         case 2:
                             output = _a.sent();
                             if (!output.result || output.err) {

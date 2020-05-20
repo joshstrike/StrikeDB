@@ -5,8 +5,8 @@ class Test {
     public pool:DB.Pool;
     public constructor() {
         //Use a familiar PoolConfig:
-        let config:mysql.PoolConfig = {host:'localhost',user:'my_user',password:'my_password',database:'NBA',
-                                        supportBigNumbers:true,waitForConnections:true,connectionLimit:10};
+        let config:mysql.PoolConfig = {host:'localhost',user:'root',password:'ayayay',database:'NBA',
+                                        supportBigNumbers:true,waitForConnections:true,connectionLimit:10,multipleStatements:true};
         
         //Set up a pool which you'll call to get DBConnection objects. 
         this.pool = new DB.Pool(config);
@@ -22,7 +22,7 @@ class Test {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:false,logQueries:true});
         
         //Prepare a statement server-side. The second paramater, emulate, defaults to false.
-        let stm:DB.Statement = await conn.prepare(`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`,false);
+        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`},false);
         //now execute it:
         await stm.execute({homeID:'ATL'});
         if (stm.err) console.log(stm.err); else console.log(stm.result);
@@ -49,7 +49,7 @@ class Test {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:false,logQueries:true});
     
         //You can also use ? selectors, just pass an array instead of key-value pairs.
-        let stm:DB.Statement = await conn.prepare(`SELECT * FROM games WHERE homeID=? LIMIT 1`,false);
+        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=? LIMIT 1`},false);
         await stm.execute(['ATL']);
         if (stm.err) console.log(stm.err);
             else console.log(stm.result);
@@ -58,7 +58,7 @@ class Test {
         //You can escape table names with ::two colons. This also works in the ?? style. 
         //This uses emulated escaping. This is NOT allowed on server-side prepares.
         //Set the second parameter of prepare() for emulated prepares. 
-        let stm2:DB.Statement = await conn.prepare(`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`,true);
+        let stm2:DB.Statement = await conn.prepare({sql:`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`},true);
         await stm2.execute({table:'games',homeID:'ATL'});
         if (stm2.err) console.log(stm2.err);
             else console.log(stm2.result);
@@ -75,7 +75,7 @@ class Test {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:true,logQueries:true});
     
         //You can also use ? selectors, just pass an array instead of key-value pairs.
-        let stm:DB.Statement = await conn.prepare(`SELECT * FROM games WHERE homeID=? LIMIT 1`,false).catch((s:DB.Statement)=>s);
+        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=? LIMIT 1`,nestTables:'_'},true).catch((s:DB.Statement)=>s);
         await stm.execute(['ATL']).catch((s:DB.Statement)=>s);
         if (stm.err) console.log(stm.err); //you could log it in the catch, or later.
             else console.log(stm.result);

@@ -2,7 +2,7 @@ import * as mysql from 'mysql';
 import * as util from 'util';
 import { BindParser, Binding } from './BindParser';
 
-//leave this pretty loosely typed, generally we're expecting either an OKPacket or a rowset. @TODO tweak this for nested tables? Nah. That's a bad paradigm.
+//leave this pretty loosely typed, generally we're expecting either an OKPacket or a rowset.
 export type Result = mysql.OkPacket&any[];
 export type Rejection = {err:mysql.MysqlError|{message:string}};
 
@@ -50,6 +50,8 @@ export class Pool {
     }
 }
 
+export type ExecOpts = {timeout?:number,nestTables?:any,typeCast?:mysql.TypeCast};
+
 export class Statement {
     public err:mysql.MysqlError|{message:string};
     public result:Result;
@@ -58,11 +60,18 @@ export class Statement {
     public keys:Binding[] = null; //set from Connection.prepare();
     public useID:number = 0;
 
-    public constructor(private _dbc:Connection, private _emulateSQL?:string) {}
+    public constructor(private _dbc:Connection, private _emulateSQL?:string, private _execOpts?:ExecOpts) {}
     
     //returnNew yields a new Statement, as opposed to returning _this_. The most recent result is available on _this_, but 
     //at times if you're running a loop. 
     public async execute(values?:any,returnNew?:boolean):Promise<Statement> {
+        let timeout:number, nestTables:any, typeCast:mysql.TypeCast;
+        if (this._execOpts) {
+            timeout = this._execOpts.timeout;
+            nestTables = this._execOpts.nestTables;
+            typeCast = this._execOpts.typeCast;
+        }
+        
         let v:any[] = [];
         let bindError:string;
         if (!this.keys) {
@@ -83,8 +92,13 @@ export class Statement {
             }
         }
 
-        if (this._emulateSQL) return (this._emulatedExecute(v,returnNew));
-        //if (this.prepID===null) throw new Error('Attempted to execute unprepared statement.'); //abnormal throw; should never happen in production.
+        if (this._emulateSQL) return (this._emulatedExecute({sql:this._emulateSQL,values:v,timeout:timeout,nestTables:nestTables,typeCast:typeCast},returnNew));
+        if (this.prepID===null && !this.err) {
+            //throw new Error('Attempted to execute unprepared statement.');
+            this.err = this._dbc.err = {message:`Attempted to execute an unprepared statement. Statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement.`};
+            if (this._dbc.rejectErrors) return Promise.reject(this);
+            return(this);
+        }
         
         let varstr:string = await this._use(v);
         
@@ -97,7 +111,7 @@ export class Statement {
         //Create a new execution statement. We return the new one to replace this one.
         let _s:string = `EXECUTE stm_${this.prepID} ${varstr};`;
         if (this._dbc.logQueries) console.log(_s);
-        let stm:Statement = await this._dbc._query({sql:_s}).catch((e:Statement)=>{ return (e); });
+        let stm:Statement = await this._dbc._query({sql:_s,timeout:timeout,nestTables:nestTables,typeCast:typeCast}).catch((e:Statement)=>{ return (e); });
         if (stm.err) {
             if (this._dbc.rejectErrors) return Promise.reject(stm);
         }
@@ -111,14 +125,14 @@ export class Statement {
      * Alternate shunt for executing w/o actually setting up a server prepared statement.
      * @param values
      */
-    private async _emulatedExecute(values?:any[],returnNew?:boolean):Promise<Statement> {
-        let stm:Statement = await this._dbc._act('query',{sql:this._emulateSQL,values:values});
+    private async _emulatedExecute(opts?:mysql.QueryOptions,returnNew?:boolean):Promise<Statement> {
+        let stm:Statement = await this._dbc._act('query',opts);
         stm._emulateSQL = this._emulateSQL;
         if (stm.err) {
             this._dbc.err = stm.err;
             if (this._dbc.rejectErrors) return Promise.reject(stm);
         }
-        if (this._dbc.logQueries) console.log('Executed (emulated):',this._emulateSQL,'with',values);
+        if (this._dbc.logQueries) console.log('Executed (emulated):',this._emulateSQL,'with',opts.values);
         if (returnNew) return (stm);
         //copy the newly generated stm values to this.
         this.err = stm.err;
@@ -136,7 +150,7 @@ export class Statement {
         //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
         //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
         this.useID = (this.useID+1)%999;
-        let varstr:string = " USING ";
+        let varstr:string = "USING ";
         let p:Promise<Statement>[] = [];
         for (let k:number=0;k < values.length;k++) {
             let _val:string = values[k]===null ? 'null' : `'${values[k]}'`;
@@ -163,14 +177,15 @@ export class Connection {
     public constructor(public conn?:mysql.PoolConnection, public err?:mysql.MysqlError|{message:string,fatal?:string}, public rejectErrors:boolean = true, public logQueries?:boolean) {}
     
     /**
-     * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a DBResult or MysqlError.
+     * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Statement.
+     * The statement is never prepared or executed, it is just assembled here from the options and the call's result.
      * @param func
      * @param opts
      * @param overwriteResult
      * @param forceRejectErrors
      */
     public async _act(func:string,opts?:mysql.QueryOptions,overwriteResult:boolean = true,forceRejectErrors?:boolean):Promise<Statement> {
-        let stm:Statement = new Statement(this);
+        let stm:Statement = new Statement(this,null,opts);
         if (!this.conn || (this.err && this.err.fatal)) {
             stm.err = this.err;
             if (this.rejectErrors || forceRejectErrors) return Promise.reject(stm);
@@ -219,8 +234,10 @@ export class Connection {
         let stm:Statement = await this._act('query',opts,overwriteResult);
         return (stm);
     }
-    public async prepare(sql:string,emulate?:boolean):Promise<Statement> {
+    public async prepare(opts:mysql.QueryOptions,emulate?:boolean):Promise<Statement> {
         let prepID:number = NameFactory.NUM;
+        let sql:string = opts.sql;
+        let execOpts:ExecOpts = {timeout:opts.timeout,nestTables:opts.nestTables,typeCast:opts.typeCast};
     
         let keys:Binding[]; //leave statement keys undefined if passing an array of values for ? ...define only if rewriting the query.
         let bindingRes:{newSql:string,bindings:Binding[]} = BindParser.InlineBindings(sql);
@@ -244,7 +261,7 @@ export class Connection {
         sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g,'$1<$3>$5'); //convert all `field`=? to the null-safe <=>
         sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g,'!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
         if (emulate) {
-            let s:Statement = new Statement(this,sql);
+            let s:Statement = new Statement(this,sql,execOpts);
             if (this.logQueries) console.log('Prepared (emulated):',sql);
             s.keys = keys;
             return (s);
@@ -254,7 +271,7 @@ export class Connection {
         let _s:string = `PREPARE stm_${prepID} FROM '${sql}';`
         if (this.logQueries) console.log(_s);
         //Don't catch here. Allow errors to bubble up. _act only rejects if rejectErrors is true, otherwise it returns a statement with an .err.
-        let stm:Statement = await this._query({sql:_s});
+        let stm:Statement = await this._query({sql:_s,timeout:execOpts.timeout,nestTables:execOpts.nestTables,typeCast:execOpts.typeCast});
         stm.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
         stm.prepID = prepID;
         stm.keys = keys;
@@ -263,12 +280,12 @@ export class Connection {
     }
     public async exec(opts:mysql.QueryOptions,emulate?:boolean):Promise<Statement> {
         //Single query on a prepared statement. Deallocates the statement afterwards.
-        let stm:Statement = await this.prepare(opts.sql,emulate).catch((e:Statement)=>{ return (e); });
+        let stm:Statement = await this.prepare(opts,emulate).catch((e:Statement)=>{ return (e); });
         if (stm.err) {
             if (this.rejectErrors) return Promise.reject(stm);
             return (stm);
         }
-        let output:Statement = await stm.execute(opts.values).catch((e:Statement)=>{ return (e); });
+        let output:Statement = await stm.execute(opts.values,false).catch((e:Statement)=>{ return (e); });
         if (!output.result || output.err) {
             if (this.rejectErrors) return Promise.reject(output);
             return (output);
