@@ -204,6 +204,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 1:
                             stm = _a.sent();
                             stm._emulateSQL = this._emulateSQL;
+                            stm.keys = this.keys;
                             if (stm.err) {
                                 this._dbc.err = stm.err;
                                 if (this._dbc.rejectErrors)
