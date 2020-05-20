@@ -93,6 +93,7 @@ export class Statement {
         }
 
         if (this._emulateSQL) return (this._emulatedExecute({sql:this._emulateSQL,values:v,timeout:timeout,nestTables:nestTables,typeCast:typeCast},returnNew));
+        
         if (this.prepID===null && !this.err) {
             //throw new Error('Attempted to execute unprepared statement.');
             this.err = this._dbc.err = {message:`Attempted to execute an unprepared statement. Statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement.`};
@@ -128,6 +129,7 @@ export class Statement {
     private async _emulatedExecute(opts?:mysql.QueryOptions,returnNew?:boolean):Promise<Statement> {
         let stm:Statement = await this._dbc._act('query',opts);
         stm._emulateSQL = this._emulateSQL;
+        stm.keys = this.keys;
         if (stm.err) {
             this._dbc.err = stm.err;
             if (this._dbc.rejectErrors) return Promise.reject(stm);
