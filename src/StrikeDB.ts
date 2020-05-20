@@ -96,7 +96,7 @@ export class Statement {
         
         if (this.prepID===null && !this.err) {
             //throw new Error('Attempted to execute unprepared statement.');
-            this.err = this._dbc.err = {message:`Attempted to execute an unprepared statement. Statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement.`};
+            this.err = this._dbc.err = {message:`Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement.`};
             if (this._dbc.rejectErrors) return Promise.reject(this);
             return(this);
         }

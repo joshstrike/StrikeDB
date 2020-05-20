@@ -157,7 +157,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 return [2 /*return*/, (this._emulatedExecute({ sql: this._emulateSQL, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }, returnNew))];
                             if (this.prepID === null && !this.err) {
                                 //throw new Error('Attempted to execute unprepared statement.');
-                                this.err = this._dbc.err = { message: "Attempted to execute an unprepared statement. Statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement." };
+                                this.err = this._dbc.err = { message: "Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement." };
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(this)];
                                 return [2 /*return*/, (this)];
