@@ -111,16 +111,17 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }());
     exports.Pool = Pool;
     var Statement = (function () {
-        function Statement(_dbc, _emulateSQL, _execOpts) {
+        function Statement(_dbc, /* private _emulateSQL?:string, */ _execOpts) {
             this._dbc = _dbc;
-            this._emulateSQL = _emulateSQL;
             this._execOpts = _execOpts;
             this.prepID = null; //set from Connection.prepare();
             this.keys = null; //set from Connection.prepare();
             this.useID = 0;
         }
         //returnNew yields a new Statement, as opposed to returning _this_. The most recent result is available on _this_, but 
-        //at times if you're running a loop. 
+        //if looping through executes asynchronously you will want to clone new statements from them to get the results.
+        //New statements from returnNew possess the EXECUTE statement as their opts.sql (in server-side mode), as opposed to the PREPARE statement. 
+        //They also do not contain a prepID or keys, and cannot be re-executed and are only for gathering errors and results.
         Statement.prototype.execute = function (values, returnNew) {
             return __awaiter(this, void 0, void 0, function () {
                 var _this = this;
@@ -153,8 +154,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     return [2 /*return*/, (this)];
                                 }
                             }
-                            if (this._emulateSQL)
-                                return [2 /*return*/, (this._emulatedExecute({ sql: this._emulateSQL, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }, returnNew))];
+                            //convert to a standard query.
+                            if (this._execOpts.emulate)
+                                return [2 /*return*/, (this._emulatedExecute({ sql: this._execOpts.sql, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }, returnNew))];
                             if (this.prepID === null && !this.err) {
                                 //throw new Error('Attempted to execute unprepared statement.');
                                 this.err = this._dbc.err = { message: "Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement." };
@@ -181,11 +183,11 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(stm)];
                             }
-                            if (returnNew)
-                                return [2 /*return*/, (stm)];
                             this.err = stm.err;
                             this.result = stm.result;
                             this.fields = stm.fields;
+                            if (returnNew)
+                                return [2 /*return*/, (stm)]; //return new returns the EXECUTE .sql, whereas the original statement retains the original opts created by .prepare().
                             return [2 /*return*/, (this)];
                     }
                 });
@@ -203,7 +205,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 0: return [4 /*yield*/, this._dbc._act('query', opts)];
                         case 1:
                             stm = _a.sent();
-                            stm._emulateSQL = this._emulateSQL;
                             stm.keys = this.keys;
                             if (stm.err) {
                                 this._dbc.err = stm.err;
@@ -211,13 +212,13 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     return [2 /*return*/, Promise.reject(stm)];
                             }
                             if (this._dbc.logQueries)
-                                console.log('Executed (emulated):', this._emulateSQL, 'with', opts.values);
-                            if (returnNew)
-                                return [2 /*return*/, (stm)];
+                                console.log('Executed (emulated):', opts.sql, 'with', opts.values);
                             //copy the newly generated stm values to this.
                             this.err = stm.err;
                             this.result = stm.result;
                             this.fields = stm.fields;
+                            if (returnNew)
+                                return [2 /*return*/, (stm)];
                             return [2 /*return*/, (this)];
                     }
                 });
@@ -243,7 +244,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             varstr = "USING ";
                             p = [];
                             for (k = 0; k < values.length; k++) {
-                                _val = values[k] === null ? 'null' : "'" + values[k] + "'";
+                                _val = values[k] === null ? 'NULL' : "'" + values[k] + "'";
                                 _s = "SET @" + k + "_" + this.useID + "=" + _val + ";";
                                 if (this._dbc.logQueries)
                                     console.log(_s);
@@ -266,7 +267,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
-                            if (this._emulateSQL)
+                            if (this._execOpts.emulate)
                                 return [2 /*return*/, (this)];
                             return [4 /*yield*/, this._dbc._act('query', { sql: "DEALLOCATE PREPARE stm_" + this.prepID }, false, true).catch(function (e) { return _this._dbc.release(); })];
                         case 1:
@@ -304,7 +305,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
-                            stm = new Statement(this, null, opts);
+                            stm = new Statement(this, opts);
                             if (!this.conn || (this.err && this.err.fatal)) {
                                 stm.err = this.err;
                                 if (this.rejectErrors || forceRejectErrors)
@@ -379,27 +380,26 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
-        Connection.prototype.prepare = function (opts, emulate) {
+        Connection.prototype.prepare = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var prepID, sql, execOpts, keys, bindingRes, _i, _a, b, stm_1, s, _s, stm;
+                var prepID, sql, keys, bindingRes, _i, _a, b, stm_1, s, _s, stm;
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0:
                             prepID = NameFactory.NUM;
                             sql = opts.sql;
-                            execOpts = { timeout: opts.timeout, nestTables: opts.nestTables, typeCast: opts.typeCast };
                             bindingRes = BindParser_1.BindParser.InlineBindings(sql);
                             if (bindingRes.bindings.length) {
                                 sql = bindingRes.newSql;
                                 keys = bindingRes.bindings;
-                                if (!emulate) {
+                                if (!opts.emulate) {
                                     for (_i = 0, _a = bindingRes.bindings; _i < _a.length; _i++) {
                                         b = _a[_i];
                                         if (b.field)
                                             this.err = { message: "ERROR PREPARING STATEMENT. Could not bind ::" + b.name + ". Table and field bindings can only be used under emulation." };
                                     }
                                     if (this.err) {
-                                        stm_1 = new Statement(this);
+                                        stm_1 = new Statement(this, opts);
                                         stm_1.err = this.err;
                                         if (this.rejectErrors)
                                             return [2 /*return*/, Promise.reject(stm_1)];
@@ -409,8 +409,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             }
                             sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g, '$1<$3>$5'); //convert all `field`=? to the null-safe <=>
                             sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g, '!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
-                            if (emulate) {
-                                s = new Statement(this, sql, execOpts);
+                            if (opts.emulate) {
+                                opts.sql = sql;
+                                s = new Statement(this, opts);
                                 if (this.logQueries)
                                     console.log('Prepared (emulated):', sql);
                                 s.keys = keys;
@@ -421,7 +422,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             _s = "PREPARE stm_" + prepID + " FROM '" + sql + "';";
                             if (this.logQueries)
                                 console.log(_s);
-                            return [4 /*yield*/, this._query({ sql: _s, timeout: execOpts.timeout, nestTables: execOpts.nestTables, typeCast: execOpts.typeCast })];
+                            //Don't catch here. Allow errors to bubble up. _act only rejects if rejectErrors is true, otherwise it returns a statement with an .err.
+                            opts.sql = _s;
+                            return [4 /*yield*/, this._query(opts, false)];
                         case 1:
                             stm = _b.sent();
                             stm.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
@@ -434,12 +437,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
-        Connection.prototype.exec = function (opts, emulate) {
+        Connection.prototype.exec = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var stm, output;
+                var stm;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
-                        case 0: return [4 /*yield*/, this.prepare(opts, emulate).catch(function (e) { return (e); })];
+                        case 0: return [4 /*yield*/, this.prepare({ sql: opts.sql, timeout: opts.timeout, nestTables: opts.nestTables, typeCast: opts.typeCast, emulate: opts.emulate }).catch(function (e) { return (e); })];
                         case 1:
                             stm = _a.sent();
                             if (stm.err) {
@@ -447,20 +450,21 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     return [2 /*return*/, Promise.reject(stm)];
                                 return [2 /*return*/, (stm)];
                             }
-                            return [4 /*yield*/, stm.execute(opts.values, false).catch(function (e) { return (e); })];
+                            console.log('execute w/', opts);
+                            return [4 /*yield*/, stm.execute(opts.values).catch(function (e) { return (e); })];
                         case 2:
-                            output = _a.sent();
-                            if (!output.result || output.err) {
+                            _a.sent();
+                            if (!stm.result || stm.err) {
                                 if (this.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(output)];
-                                return [2 /*return*/, (output)];
+                                    return [2 /*return*/, Promise.reject(stm)];
+                                return [2 /*return*/, (stm)];
                             }
-                            if (!!emulate) return [3 /*break*/, 4];
+                            if (!!opts.emulate) return [3 /*break*/, 4];
                             return [4 /*yield*/, stm.deallocate()];
                         case 3:
                             _a.sent();
                             _a.label = 4;
-                        case 4: return [2 /*return*/, (output)];
+                        case 4: return [2 /*return*/, (stm)];
                     }
                 });
             });

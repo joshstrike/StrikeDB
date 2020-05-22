@@ -45,18 +45,18 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var DB = require("./StrikeDB");
-    var Test = (function () {
-        function Test() {
+    var Test2 = (function () {
+        function Test2() {
             //Use a familiar PoolConfig:
             var config = { host: 'localhost', user: 'my_user', password: 'my_password', database: 'NBA',
                 supportBigNumbers: true, waitForConnections: true, connectionLimit: 10, multipleStatements: true };
             //Set up a pool which you'll call to get DBConnection objects. 
             this.pool = new DB.Pool(config);
-            this.asyncTests();
-            this.otherTests();
+            //this.asyncTests();
+            //this.otherTests();
             this.rejectionTest();
         }
-        Test.prototype.asyncTests = function () {
+        Test2.prototype.asyncTests = function () {
             return __awaiter(this, void 0, void 0, function () {
                 var conn, stm, newStm, p, _i, _a, team, statements;
                 return __generator(this, function (_b) {
@@ -64,14 +64,15 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 0: return [4 /*yield*/, this.pool.getConnection({ rejectErrors: false, logQueries: true })];
                         case 1:
                             conn = _b.sent();
-                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM games WHERE homeID=:homeID LIMIT 1" }, false)];
+                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM games WHERE homeID=:homeID LIMIT 1", emulate: true, nestTables: true })];
                         case 2:
                             stm = _b.sent();
-                            //now execute it:
-                            return [4 /*yield*/, stm.execute({ homeID: 'ATL' })];
+                            return [4 /*yield*/, stm.execute({ homeID: 'ATL' }, true)];
                         case 3:
+                            //console.log('PREPARED',stm);
                             //now execute it:
-                            _b.sent();
+                            stm = _b.sent();
+                            //console.log('EXECUTED',stm);
                             if (stm.err)
                                 console.log(stm.err);
                             else
@@ -79,6 +80,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             return [4 /*yield*/, stm.execute({ homeID: 'DEN' }, true)];
                         case 4:
                             newStm = _b.sent();
+                            if (newStm.err)
+                                console.log(newStm.err, newStm._execOpts.sql);
+                            else
+                                console.log(newStm.result);
                             p = [];
                             for (_i = 0, _a = ['BOS', 'CHI', 'MEM']; _i < _a.length; _i++) {
                                 team = _a[_i];
@@ -87,7 +92,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             return [4 /*yield*/, Promise.all(p)];
                         case 5:
                             statements = _b.sent();
-                            console.log(statements.map(function (s) { return s.result; }));
+                            console.log(statements.map(function (s) { return s.result[0]; }));
                             //deallocate the server-side prepared statement. Important on server-side executions if you're not planning to close the connection for a long time.
                             //This is not necessary if you prepared the statement using emulation.
                             stm.deallocate();
@@ -98,7 +103,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
-        Test.prototype.otherTests = function () {
+        Test2.prototype.otherTests = function () {
             return __awaiter(this, void 0, void 0, function () {
                 var conn, stm, stm2, stm3;
                 return __generator(this, function (_a) {
@@ -106,7 +111,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 0: return [4 /*yield*/, this.pool.getConnection({ rejectErrors: false, logQueries: true })];
                         case 1:
                             conn = _a.sent();
-                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM games WHERE homeID=? LIMIT 1" }, false)];
+                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM games WHERE homeID=? LIMIT 1" })];
                         case 2:
                             stm = _a.sent();
                             return [4 /*yield*/, stm.execute(['ATL'])];
@@ -117,7 +122,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             else
                                 console.log(stm.result);
                             stm.deallocate();
-                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1" }, true)];
+                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1", emulate: true })];
                         case 4:
                             stm2 = _a.sent();
                             return [4 /*yield*/, stm2.execute({ table: 'games', homeID: 'ATL' })];
@@ -127,7 +132,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 console.log(stm2.err);
                             else
                                 console.log(stm2.result);
-                            return [4 /*yield*/, conn.exec({ sql: "SELECT * FROM games WHERE homeID=:homeID LIMIT 1", values: { homeID: 'ATL' } })];
+                            return [4 /*yield*/, conn.exec({ sql: "SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1", values: { table: 'games', homeID: 'ATL' }, emulate: true })];
                         case 6:
                             stm3 = _a.sent();
                             if (stm3.err)
@@ -140,7 +145,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
-        Test.prototype.rejectionTest = function () {
+        Test2.prototype.rejectionTest = function () {
             return __awaiter(this, void 0, void 0, function () {
                 var conn, stm;
                 return __generator(this, function (_a) {
@@ -148,7 +153,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 0: return [4 /*yield*/, this.pool.getConnection({ rejectErrors: true, logQueries: true })];
                         case 1:
                             conn = _a.sent();
-                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM games WHERE homeID=? LIMIT 1", nestTables: '_' }, true).catch(function (s) { return s; })];
+                            return [4 /*yield*/, conn.prepare({ sql: "SELECT * FROM games WHERE homeID=? LIMIT 1", nestTables: '_', emulate: true }).catch(function (s) { return s; })];
                         case 2:
                             stm = _a.sent();
                             return [4 /*yield*/, stm.execute(['ATL']).catch(function (s) { return s; })];
@@ -164,7 +169,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
-        return Test;
+        return Test2;
     }());
-    new Test();
+    new Test2();
 });

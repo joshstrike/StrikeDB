@@ -1,7 +1,7 @@
 import * as mysql from 'mysql';
 import * as DB from './StrikeDB';
 
-class Test {
+class Test2 {
     public pool:DB.Pool;
     public constructor() {
         //Use a familiar PoolConfig:
@@ -11,8 +11,8 @@ class Test {
         //Set up a pool which you'll call to get DBConnection objects. 
         this.pool = new DB.Pool(config);
         
-        this.asyncTests();
-        this.otherTests();
+        //this.asyncTests();
+        //this.otherTests();
         this.rejectionTest();
     }
     public async asyncTests():Promise<void> {
@@ -22,12 +22,16 @@ class Test {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:false,logQueries:true});
         
         //Prepare a statement server-side. The second paramater, emulate, defaults to false.
-        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`},false);
+        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`,emulate:true,nestTables:true});
+        //console.log('PREPARED',stm);
         //now execute it:
-        await stm.execute({homeID:'ATL'});
+        stm = await stm.execute({homeID:'ATL'},true);
+        //console.log('EXECUTED',stm);
         if (stm.err) console.log(stm.err); else console.log(stm.result);
+        
         //execute it again... note that if the second param (returnNew) is not true, the original statement's result and err will be overwritten.
         let newStm:DB.Statement = await stm.execute({homeID:'DEN'},true);
+        if (newStm.err) console.log(newStm.err, newStm._execOpts.sql); else console.log(newStm.result);
         
         //async with promises:
         let p:Promise<DB.Statement>[] = [];
@@ -36,7 +40,7 @@ class Test {
         }
         //wait for three separate statements, each with its own err or result, executed asynchronously server-side.
         let statements:DB.Statement[] = await Promise.all(p);
-        console.log(statements.map((s)=>s.result));
+        console.log(statements.map((s)=>s.result[0]));
         
         //deallocate the server-side prepared statement. Important on server-side executions if you're not planning to close the connection for a long time.
         //This is not necessary if you prepared the statement using emulation.
@@ -49,22 +53,22 @@ class Test {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:false,logQueries:true});
     
         //You can also use ? selectors, just pass an array instead of key-value pairs.
-        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=? LIMIT 1`},false);
+        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=? LIMIT 1`});
         await stm.execute(['ATL']);
         if (stm.err) console.log(stm.err);
             else console.log(stm.result);
         stm.deallocate();
-        
+
         //You can escape table names with ::two colons. This also works in the ?? style. 
         //This uses emulated escaping. This is NOT allowed on server-side prepares.
         //Set the second parameter of prepare() for emulated prepares. 
-        let stm2:DB.Statement = await conn.prepare({sql:`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`},true);
+        let stm2:DB.Statement = await conn.prepare({sql:`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`,emulate:true});
         await stm2.execute({table:'games',homeID:'ATL'});
         if (stm2.err) console.log(stm2.err);
             else console.log(stm2.result);
         
         //If you only need to execute something once, you can do it via exec(), which also automatically deallocates:
-        let stm3:DB.Statement = await conn.exec({sql:`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`,values:{homeID:'ATL'}});
+        let stm3:DB.Statement = await conn.exec({sql:`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`,values:{table:'games',homeID:'ATL'},emulate:true});
         if (stm3.err) console.log(stm3.err);
             else console.log(stm3.result);
         
@@ -75,11 +79,11 @@ class Test {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:true,logQueries:true});
     
         //You can also use ? selectors, just pass an array instead of key-value pairs.
-        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=? LIMIT 1`,nestTables:'_'},true).catch((s:DB.Statement)=>s);
+        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=? LIMIT 1`,nestTables:'_',emulate:true}).catch((s:DB.Statement)=>s);
         await stm.execute(['ATL']).catch((s:DB.Statement)=>s);
         if (stm.err) console.log(stm.err); //you could log it in the catch, or later.
             else console.log(stm.result);
         stm.deallocate();
     }
 }
-new Test();
+new Test2();
