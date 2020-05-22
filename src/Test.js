@@ -49,7 +49,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         function Test2() {
             var _this = this;
             //Use a familiar PoolConfig:
-            var config = { host: 'localhost', user: 'root', password: 'ayayay', database: 'NBA',
+            var config = { host: 'localhost', user: 'my_user', password: 'my_password', database: 'NBA',
                 supportBigNumbers: true, waitForConnections: true, connectionLimit: 10, multipleStatements: true };
             //Set up a pool which you'll call to get DBConnection objects. 
             this.pool = new DB.Pool(config);
@@ -152,10 +152,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 1:
                             conn = _a.sent();
                             return [4 /*yield*/, conn.prepare({ sql: "INSERT INTO nonexistent_table VALUES ('',?);", nestTables: '_' }).
-                                    catch(function (s) { console.log(s.err.message); return (s); })];
+                                    catch(function (s) { console.log('REJECTED PREPARE:', s.err.message); return (s); })];
                         case 2:
                             stm = _a.sent();
-                            return [4 /*yield*/, stm.execute(['ATL']).catch(function (s) { console.log('REJECTED:', s.err.message); return (s); })];
+                            return [4 /*yield*/, stm.execute(['ATL']).catch(function (s) { console.log('REJECTED EXECUTION:', s.err.message); return (s); })];
                         case 3:
                             _a.sent();
                             if (stm.err)

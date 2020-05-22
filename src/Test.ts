@@ -5,7 +5,7 @@ class Test2 {
     public pool:DB.Pool;
     public constructor() {
         //Use a familiar PoolConfig:
-        let config:mysql.PoolConfig = {host:'localhost',user:'root',password:'ayayay',database:'NBA',
+        let config:mysql.PoolConfig = {host:'localhost',user:'my_user',password:'my_password',database:'NBA',
                                         supportBigNumbers:true,waitForConnections:true,connectionLimit:10,multipleStatements:true};
         
         //Set up a pool which you'll call to get DBConnection objects. 
@@ -78,8 +78,8 @@ class Test2 {
     
         //You can also use ? selectors, just pass an array instead of key-value pairs.
         let stm:DB.Statement = await conn.prepare({sql:`INSERT INTO nonexistent_table VALUES ('',?);`,nestTables:'_'}).
-            catch((s:DB.Statement)=>{ console.log(s.err.message); return (s); }); //return the failed statement you caught, or do something else with it.
-        await stm.execute(['ATL']).catch((s:DB.Statement)=>{console.log('REJECTED:',s.err.message);return(s);});       
+            catch((s:DB.Statement)=>{ console.log('REJECTED PREPARE:',s.err.message); return (s); }); //return the failed statement you caught, or do something else with it.
+        await stm.execute(['ATL']).catch((s:DB.Statement)=>{ console.log('REJECTED EXECUTION:',s.err.message); return(s); });       
         if (stm.err) console.log('CHECKED STM.ERR LATER:',stm.err.message); //you could log it in the catch, or later.
             else console.log(stm.result);
         stm.deallocate();
