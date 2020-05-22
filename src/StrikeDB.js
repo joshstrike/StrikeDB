@@ -143,6 +143,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     //kinda like !isset()
                                     if (values[k.name] === undefined) {
                                         _this.err = { message: "EXECUTION ERROR: Bound variable `" + k.name + "` is undefined" };
+                                        _this._dbc.err = _this.err;
                                     }
                                     r.push(values[k.name]);
                                     return (r);
@@ -202,21 +203,30 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 var stm;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
-                        case 0: return [4 /*yield*/, this._dbc._act('query', opts)];
+                        case 0:
+                            console.log('start emulated');
+                            if (!this._dbc.rejectErrors) return [3 /*break*/, 2];
+                            return [4 /*yield*/, this._dbc._act('query', opts).catch(function (s) { return s; })];
                         case 1:
+                            stm = _a.sent(); //must handle internally
+                            return [3 /*break*/, 4];
+                        case 2: return [4 /*yield*/, this._dbc._act('query', opts)];
+                        case 3:
                             stm = _a.sent();
+                            _a.label = 4;
+                        case 4:
+                            if (this._dbc.logQueries)
+                                console.log('Executed (emulated):', opts.sql, 'with', opts.values);
                             stm.keys = this.keys;
+                            this.err = stm.err;
+                            this.result = stm.result;
+                            this.fields = stm.fields;
                             if (stm.err) {
                                 this._dbc.err = stm.err;
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(stm)];
                             }
-                            if (this._dbc.logQueries)
-                                console.log('Executed (emulated):', opts.sql, 'with', opts.values);
                             //copy the newly generated stm values to this.
-                            this.err = stm.err;
-                            this.result = stm.result;
-                            this.fields = stm.fields;
                             if (returnNew)
                                 return [2 /*return*/, (stm)];
                             return [2 /*return*/, (this)];

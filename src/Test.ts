@@ -5,15 +5,15 @@ class Test2 {
     public pool:DB.Pool;
     public constructor() {
         //Use a familiar PoolConfig:
-        let config:mysql.PoolConfig = {host:'localhost',user:'my_user',password:'my_password',database:'NBA',
+        let config:mysql.PoolConfig = {host:'localhost',user:'root',password:'ayayay',database:'NBA',
                                         supportBigNumbers:true,waitForConnections:true,connectionLimit:10,multipleStatements:true};
         
         //Set up a pool which you'll call to get DBConnection objects. 
         this.pool = new DB.Pool(config);
         
-        //this.asyncTests();
-        //this.otherTests();
-        this.rejectionTest();
+        this.asyncTests().then(
+                ()=>this.otherTests().then(
+                        ()=>this.rejectionTest()));
     }
     public async asyncTests():Promise<void> {
         //Get a connection from the pool. You will be preparing statements on this connection. 
@@ -22,11 +22,9 @@ class Test2 {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:false,logQueries:true});
         
         //Prepare a statement server-side. The second paramater, emulate, defaults to false.
-        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`,emulate:true,nestTables:true});
-        //console.log('PREPARED',stm);
+        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`});
         //now execute it:
-        stm = await stm.execute({homeID:'ATL'},true);
-        //console.log('EXECUTED',stm);
+        await stm.execute({homeID:'ATL'});
         if (stm.err) console.log(stm.err); else console.log(stm.result);
         
         //execute it again... note that if the second param (returnNew) is not true, the original statement's result and err will be overwritten.
@@ -79,9 +77,10 @@ class Test2 {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:true,logQueries:true});
     
         //You can also use ? selectors, just pass an array instead of key-value pairs.
-        let stm:DB.Statement = await conn.prepare({sql:`SELECT * FROM games WHERE homeID=? LIMIT 1`,nestTables:'_',emulate:true}).catch((s:DB.Statement)=>s);
-        await stm.execute(['ATL']).catch((s:DB.Statement)=>s);
-        if (stm.err) console.log(stm.err); //you could log it in the catch, or later.
+        let stm:DB.Statement = await conn.prepare({sql:`INSERT INTO nonexistent_table VALUES ('',?);`,nestTables:'_'}).
+            catch((s:DB.Statement)=>{ console.log(s.err.message); return (s); }); //return the failed statement you caught, or do something else with it.
+        await stm.execute(['ATL']).catch((s:DB.Statement)=>{console.log('REJECTED:',s.err.message);return(s);});       
+        if (stm.err) console.log('CHECKED STM.ERR LATER:',stm.err.message); //you could log it in the catch, or later.
             else console.log(stm.result);
         stm.deallocate();
     }

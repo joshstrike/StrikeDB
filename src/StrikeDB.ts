@@ -83,6 +83,7 @@ export class Statement {
                 //kinda like !isset()
                 if (values[k.name]===undefined) { //don't throw if it's specified but intentionally null. The one time I've been glad there's a difference!
                     this.err = {message:`EXECUTION ERROR: Bound variable \`${k.name}\` is undefined`};
+                    this._dbc.err = this.err;
                 }
                 r.push(values[k.name]);
                 return (r);
@@ -131,17 +132,24 @@ export class Statement {
      * @param values
      */
     private async _emulatedExecute(opts?:mysql.QueryOptions,returnNew?:boolean):Promise<Statement> {
-        let stm:Statement = await this._dbc._act('query',opts);
+        console.log('start emulated')
+
+        let stm:Statement;
+        if (this._dbc.rejectErrors) stm = await this._dbc._act('query',opts).catch((s:Statement)=>s); //must handle internally
+            else stm = await this._dbc._act('query',opts);
+        
+        if (this._dbc.logQueries) console.log('Executed (emulated):',opts.sql,'with',opts.values);
+
         stm.keys = this.keys;
+        this.err = stm.err;
+        this.result = stm.result;
+        this.fields = stm.fields;
+
         if (stm.err) {
             this._dbc.err = stm.err;
             if (this._dbc.rejectErrors) return Promise.reject(stm);
         }
-        if (this._dbc.logQueries) console.log('Executed (emulated):',opts.sql,'with',opts.values);
         //copy the newly generated stm values to this.
-        this.err = stm.err;
-        this.result = stm.result;
-        this.fields = stm.fields;
         if (returnNew) return (stm);
         return (this);
     }
