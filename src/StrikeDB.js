@@ -91,7 +91,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             this._pool = mysql.createPool(config);
         }
         Pool.prototype.getConnection = function (opts) {
-            if (opts === void 0) { opts = { rejectErrors: true, logQueries: false }; }
+            if (opts === void 0) { opts = { rejectErrors: true, logQueries: false, timezone: null }; }
             return __awaiter(this, void 0, void 0, function () {
                 var connPromise, dbc;
                 return __generator(this, function (_a) {
@@ -102,7 +102,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     .catch(function (e) { return new Connection(null, e, opts.rejectErrors, opts.logQueries); })];
                         case 1:
                             dbc = _a.sent();
-                            return [2 /*return*/, (dbc)];
+                            if (!opts.timezone) return [3 /*break*/, 3];
+                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + opts.timezone + "';" })];
+                        case 2:
+                            _a.sent();
+                            _a.label = 3;
+                        case 3: return [2 /*return*/, (dbc)];
                     }
                 });
             });

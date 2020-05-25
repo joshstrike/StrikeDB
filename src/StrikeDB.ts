@@ -42,10 +42,11 @@ export class Pool {
     public constructor(config:mysql.PoolConfig) {
         this._pool = mysql.createPool(config);
     }
-    public async getConnection(opts:{rejectErrors:boolean,logQueries?:boolean}={rejectErrors:true,logQueries:false}):Promise<Connection> {
+    public async getConnection(opts:{rejectErrors:boolean,logQueries?:boolean,timezone?:string}={rejectErrors:true,logQueries:false,timezone:null}):Promise<Connection> {
         let connPromise:()=>Promise<mysql.PoolConnection> = util.promisify(this._pool.getConnection).bind(this._pool);
         let dbc:Connection = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(c,null,opts.rejectErrors,opts.logQueries);})
                                         .catch((e:mysql.MysqlError)=>{return new Connection(null,e,opts.rejectErrors,opts.logQueries);});
+        if (opts.timezone) await dbc._query({sql:`SET SESSION time_zone='${opts.timezone}';`});
         return (dbc);
     }
 }
@@ -198,7 +199,7 @@ export class Connection {
      * @param forceRejectErrors
      */
     public async _act(func:string,opts?:mysql.QueryOptions,overwriteResult:boolean = true,forceRejectErrors?:boolean):Promise<Statement> {
-        //By default, 'emulate' is irrelevant for _act statements. They are never prepared, but assembled here and run immediately raw.
+        //By definition, 'emulate' is irrelevant for _act statements. They are never prepared, but assembled here and run immediately raw.
         //For example, PREPARE and EXECUTE are both handled through _act().
         let stm:Statement = new Statement(this,opts);
         if (!this.conn || (this.err && this.err.fatal)) {
@@ -250,6 +251,7 @@ export class Connection {
         return (stm);
     }
     public async prepare(opts:ExecOpts):Promise<Statement> {
+        //opts.values are ignored in prepare.
         let prepID:number = NameFactory.NUM;
         let sql:string = opts.sql;
     
