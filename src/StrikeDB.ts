@@ -1,5 +1,6 @@
 import * as mysql from 'mysql';
 import * as util from 'util';
+//import { v4 as uuidv4 } from 'uuid';
 import { BindParser, Binding } from './BindParser';
 
 //leave this pretty loosely typed, generally we're expecting either an OKPacket or a rowset.
@@ -7,9 +8,10 @@ export type Result = mysql.OkPacket&any[];
 export type Rejection = {err:mysql.MysqlError|{message:string}};
 
 class NameFactory {
-    private static _NUM:number = 0; //numbering of statement names.
+    //numbering of statement names. This range must be wide enough to 
+    private static _NUM:number = 0;
     public static get NUM():number {
-        this._NUM = (this._NUM+1)%999;
+        this._NUM = (this._NUM+1)%1000;
         return (this._NUM);
     }
 }
@@ -37,22 +39,32 @@ export class Util {
     }
 }
 
+export type PoolOpts = {rejectErrors?:boolean,logQueries?:boolean,sessionTimezone?:string};
 export class Pool {
     public _pool:mysql.Pool;
-    public constructor(config:mysql.PoolConfig) {
+    private _opts:PoolOpts = {};
+    public constructor(config:mysql.PoolConfig,opts?:PoolOpts) {
+        opts = this._optsToDefault(opts);
+        this._opts = opts;
         this._pool = mysql.createPool(config);
     }
-    public async getConnection(opts:{rejectErrors:boolean,logQueries?:boolean,timezone?:string}={rejectErrors:true,logQueries:false,timezone:null}):Promise<Connection> {
+    private _optsToDefault(o?:PoolOpts):PoolOpts {
+        if (!o) o = this._opts;
+        if (o.rejectErrors===undefined) o.rejectErrors = true;
+        if (o.logQueries===undefined) o.logQueries = true;
+        return (o);
+    }
+    public async getConnection(opts?:PoolOpts):Promise<Connection> {
+        opts = this._optsToDefault(opts);
         let connPromise:()=>Promise<mysql.PoolConnection> = util.promisify(this._pool.getConnection).bind(this._pool);
         let dbc:Connection = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(c,null,opts.rejectErrors,opts.logQueries);})
                                         .catch((e:mysql.MysqlError)=>{return new Connection(null,e,opts.rejectErrors,opts.logQueries);});
-        if (opts.timezone) await dbc._query({sql:`SET SESSION time_zone='${opts.timezone}';`});
+        if (opts.sessionTimezone) await dbc._query({sql:`SET SESSION time_zone='${opts.sessionTimezone}';`});
         return (dbc);
     }
 }
 
-export type ExecOpts = mysql.QueryOptions&{emulate?:boolean};
-
+export type StatementOpts = mysql.QueryOptions&{emulate?:boolean};
 export class Statement {
     public err:mysql.MysqlError|{message:string};
     public result:Result;
@@ -61,7 +73,7 @@ export class Statement {
     public keys:Binding[] = null; //set from Connection.prepare();
     public useID:number = 0;
 
-    public constructor(public _dbc:Connection, /* private _emulateSQL?:string, */ public _execOpts?:ExecOpts) {}
+    public constructor(public _dbc:Connection, public _execOpts?:StatementOpts) {}
     
     //returnNew yields a new Statement, as opposed to returning _this_. The most recent result is available on _this_, but 
     //if looping through executes asynchronously you will want to clone new statements from them to get the results.
@@ -163,7 +175,7 @@ export class Statement {
         //increment the statement's useID prior to every execution to preserve variables held for other executions.
         //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
         //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
-        this.useID = (this.useID+1)%999;
+        this.useID++;
         let varstr:string = "USING ";
         let p:Promise<Statement>[] = [];
         for (let k:number=0;k < values.length;k++) {
@@ -178,6 +190,7 @@ export class Statement {
         return (varstr);
     }
     public async deallocate():Promise<Statement> {
+        //Deallocation is crucial when using pooled connections.
         if (this._execOpts.emulate) return (this);
         await this._dbc._act('query',{sql:`DEALLOCATE PREPARE stm_${this.prepID}`},false,true).catch((e:Statement)=>this._dbc.release());
         return (this);
@@ -250,8 +263,9 @@ export class Connection {
         let stm:Statement = await this._act('query',opts,overwriteResult);
         return (stm);
     }
-    public async prepare(opts:ExecOpts):Promise<Statement> {
+    public async prepare(opts:StatementOpts):Promise<Statement> {
         //opts.values are ignored in prepare.
+        //let prepID:string = uuidv4();
         let prepID:number = NameFactory.NUM;
         let sql:string = opts.sql;
     
@@ -296,7 +310,7 @@ export class Connection {
         if (stm.err && this.rejectErrors) return Promise.reject(stm);
         return (stm);
     }
-    public async exec(opts:ExecOpts):Promise<Statement> {
+    public async exec(opts:StatementOpts):Promise<Statement> {
         //Single query on a prepared statement. Deallocates the statement afterwards.
         let stm:Statement = await this.prepare({sql:opts.sql,timeout:opts.timeout,nestTables:opts.nestTables,typeCast:opts.typeCast,emulate:opts.emulate}).catch((e:Statement)=>{ return (e); });
         if (stm.err) {

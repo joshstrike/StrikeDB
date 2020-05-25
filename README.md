@@ -27,28 +27,43 @@ If you set `rejectErrors` to false, it's a bit more like the PHP model where mys
 
 ------------
 
-### class **Pool**
-Wrapper for mysql.pool
+### type **PoolOpts**={rejectErrors?:boolean, logQueries?:boolean, sessionTimezone?:string}
 
-------------
-
- - **getConnection(opts:{rejectErrors:boolean, logQueries?:boolean}):Promise<Connection>**
- 
-- - **rejectErrors : boolean**
+- **rejectErrors : boolean**
 	If set, all further mysql and internal errors on this connection reject with a Statement or Connection (whatever you are awaiting) which both contain an `.err` parameter. If rejectErrors is true, you may `.catch((e)=>e.err.message)` on any call.
-	
-	
-- - **logQueries : boolean** 
+
+
+- **logQueries : boolean** 
 If true, all queries performed on the connection are logged to the console.
 
+- **sessionTimezone : string**
+By default, node-mysql parses DATE, DATETIME and TIMESTAMP types into Javascript Date objects. Specifically, node-mysql treats dates as if they are in the timezone specified by `mysql.PoolConfig.timezone`. The default for that is `local`, which means dates are converted as if the sql server is in the same timezone as the node environment. This can cause a lot of confusion, and I don't find it helpful to have middleware parsing dates that way, as I usually prefer to either know where my SQL server is and let the end client parse the dates, or else tell the database what timezone I want my dates output in based on the view I'm looking for, and let the end client treat them all as local. Either way, having a third step can throw a wrench into things. I use `mysql.PoolConfig.dateStrings:true` to prevent the date parsing behavior and simply return the strings SQL is returning.
+
+	**`sessionTimezone`**, if it is set on a pool or an individual connection,  calls `SET SESSION time_zone=${sessionTimezone}` prior to executing any other SQL.  It may be used in conjunction with PoolConfig's timezone to align the two, or used with dateStrings.
+	
+	**Be aware that like all other session variables, timezones persist after you release the connection back to the pool.**
+
+### class **Pool**
+**constructor(config:mysql.PoolConfig, opts?:PoolOpts)**
+
+Wrapper for mysql.pool. This is the only class you should instantiate directly. The parameter `config` is a standard PoolConfig.
+
+The `opts` parameter sets the default options that will be applied to any connection gotten from the pool via `getConnection()`. These can be overridden individually if you provide options to the `getConnection()` call.
+
+The default options if none are passed to the constructor are `rejectErrors:true`, `logQueries:true`, `sessionTimezone:undefined`. See **PoolOpts** for more detail.
+
 ------------
 
-### type ExecOpts = mysql.QueryOptions&{emulate?:boolean};
-ExecOpts are created on a Statement when it's prepared, or required when `Connection.exec()` is called. 
+ - **getConnection(opts?:PoolOpts):Promise<Connection>**
+
+------------
+
+### type StatementOpts = mysql.QueryOptions&{emulate?:boolean};
+StatementOpts are created on a Statement when it's prepared, or required when `Connection.exec()` is called. 
 
 The parameters `timeout`, `nestTables` and `typeCast` are supported and are used in all executions of the Statement.
 
-`ExecOpts` are the same as `QueryOptions` except with one additional parameter, `emulate`, which determines whether the prepared statement is emulated in JS or is prepared server-side. During `prepare(opts:ExecOpts)` the `opts.values` field is ignored, since new values are expected to be passed when you `execute(values)`. All immediate calls such as `Connection.exec()` will take the `values` passed in the ExecOpts.
+`StatementOpts` are the same as `QueryOptions` except with one additional parameter, `emulate`, which determines whether the prepared statement is emulated in JS or is prepared server-side. During `prepare(opts:StatementOpts)` the `opts.values` field is ignored, since new values are expected to be passed when you `execute(values)`. All immediate calls such as `Connection.exec()` will take the `values` passed in the StatementOpts.
 
 ------------
 
@@ -99,7 +114,11 @@ If `true`, executing this statement will return a new statement with the result 
 	Normally, `execute()` both updates and returns the original statement. ***New instances of `Statement` returned from `returnNew` are clones. If they are real server-side prepared statements, they cannot be executed again. Only the original statement may be re-executed.*** If the original Statement is not emulated and you try to re-execute the resulting new statement, it will return an `.err` that you have tried to execute an unprepared statement. This is because the resulting new Statement was not prepared server-side. The new Statement returned lacks a `prepID`, intentionally, to prevent it from being executed against existing set @vars. Preventing re-execution of cloned statements is to prevent thread races on their stored variable names.
 
 - **deallocate() : Promise&lt;Statement&gt;**
-Deallocates a prepared statement stored on the server. Necessary if you plan to leave a connection open for a long time. 
+Deallocates a prepared statement stored on the server. StrikeDB by default allows up to 1000 uniquely named prepared statements ***per pool*** (stm_0 through stm_999). It will then overwrite the first one. If you prepare a statement, set it aside, then prepare 1000 more statements, then execute the first one, you'll be surprised to find it executes the one you prepared last. The good news is, this means you don't usually have to worry about deallocating them. You can also increase the 1000 limit in the `NameFactory` class. The point of this is that we don't expect a prepared statement to be held that long and executed later.
+
+	MySQL's `max_prepared_stmt_count` defaults to 16,382, and you'll get an error if you try to prepare more than that without deallocating. Using looping names lets us avoid the problem. However, if your style of coding involves keeping a prepared statement around basically forever and invoking it intermittently while preparing lots of other statements, you will probably want to switch the naming pattern to something involving uuids (for which there is a stub in the code). If you do, you'll need to be absolutely sure to `deallocate()` statements as you finish with them, to avoid eventually hitting MySQL's limit.
+
+	Statements are stored on individual connections, so once released, a connection can be reaquired with unpredictable statements already stored on it. This doesn't matter as they will be overwritten once the pool's naming gets back around to them; just something to be aware of.
 
 ------------
 
@@ -123,14 +142,14 @@ Does what it says, says what it does.
 - **changeUser(opts:mysql.ConnectionOptions) : Promise&lt;Connection&gt;**
 Wrapper for MysqlPool.changeUser()
 
-- **prepare(opts:ExecOpts) : Promise&lt;Statement&gt;**
+- **prepare(opts:StatementOpts) : Promise&lt;Statement&gt;**
 Prepare a new statement. By default, the statement is prepared on the server. ***You must use emulation if you wish to bind field or table names.*** 
 
 	Additional options set when preparing a statement, such as `nestTables` or `timeout`, will apply to the statement each time you execute it.
 
 	`opts.values` is ignored when preparing a statement. The values should be sent when you execute it.
 
-- **exec(opts:ExecOpts) : Promise&lt;Statement&gt;**
+- **exec(opts:StatementOpts) : Promise&lt;Statement&gt;**
 Prepare, execute, and return a single statement, deallocating the prepared statement from the server afterwards.
 
 	Takes a classic mysqljs QueryOptions which should look like:

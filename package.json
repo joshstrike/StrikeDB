@@ -6,9 +6,11 @@
   "license": "MIT",
   "devDependencies": {
     "@types/mysql": "^2.15.11",
+    "@types/uuid": "^8.0.0",
     "mysql": "^2.18.1",
     "node": "^14.2.0",
-    "util": "^0.12.3"
+    "util": "^0.12.3",
+    "uuid": "^8.1.0"
   },
   "dependencies": {}
 }

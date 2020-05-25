@@ -46,19 +46,21 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     Object.defineProperty(exports, "__esModule", { value: true });
     var mysql = require("mysql");
     var util = require("util");
+    //import { v4 as uuidv4 } from 'uuid';
     var BindParser_1 = require("./BindParser");
     var NameFactory = (function () {
         function NameFactory() {
         }
         Object.defineProperty(NameFactory, "NUM", {
             get: function () {
-                this._NUM = (this._NUM + 1) % 999;
+                this._NUM = (this._NUM + 1) % 1000;
                 return (this._NUM);
             },
             enumerable: true,
             configurable: true
         });
-        NameFactory._NUM = 0; //numbering of statement names.
+        //numbering of statement names. This range must be wide enough to 
+        NameFactory._NUM = 0;
         return NameFactory;
     }());
     var Util = (function () {
@@ -87,23 +89,35 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }());
     exports.Util = Util;
     var Pool = (function () {
-        function Pool(config) {
+        function Pool(config, opts) {
+            this._opts = {};
+            opts = this._optsToDefault(opts);
+            this._opts = opts;
             this._pool = mysql.createPool(config);
         }
+        Pool.prototype._optsToDefault = function (o) {
+            if (!o)
+                o = this._opts;
+            if (o.rejectErrors === undefined)
+                o.rejectErrors = true;
+            if (o.logQueries === undefined)
+                o.logQueries = true;
+            return (o);
+        };
         Pool.prototype.getConnection = function (opts) {
-            if (opts === void 0) { opts = { rejectErrors: true, logQueries: false, timezone: null }; }
             return __awaiter(this, void 0, void 0, function () {
                 var connPromise, dbc;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
+                            opts = this._optsToDefault(opts);
                             connPromise = util.promisify(this._pool.getConnection).bind(this._pool);
                             return [4 /*yield*/, connPromise().then(function (c) { return new Connection(c, null, opts.rejectErrors, opts.logQueries); })
                                     .catch(function (e) { return new Connection(null, e, opts.rejectErrors, opts.logQueries); })];
                         case 1:
                             dbc = _a.sent();
-                            if (!opts.timezone) return [3 /*break*/, 3];
-                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + opts.timezone + "';" })];
+                            if (!opts.sessionTimezone) return [3 /*break*/, 3];
+                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + opts.sessionTimezone + "';" })];
                         case 2:
                             _a.sent();
                             _a.label = 3;
@@ -116,7 +130,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }());
     exports.Pool = Pool;
     var Statement = (function () {
-        function Statement(_dbc, /* private _emulateSQL?:string, */ _execOpts) {
+        function Statement(_dbc, _execOpts) {
             this._dbc = _dbc;
             this._execOpts = _execOpts;
             this.prepID = null; //set from Connection.prepare();
@@ -255,7 +269,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             //increment the statement's useID prior to every execution to preserve variables held for other executions.
                             //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
                             //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
-                            this.useID = (this.useID + 1) % 999;
+                            this.useID++;
                             varstr = "USING ";
                             p = [];
                             for (k = 0; k < values.length; k++) {
@@ -282,6 +296,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
+                            //Deallocation is crucial when using pooled connections.
                             if (this._execOpts.emulate)
                                 return [2 /*return*/, (this)];
                             return [4 /*yield*/, this._dbc._act('query', { sql: "DEALLOCATE PREPARE stm_" + this.prepID }, false, true).catch(function (e) { return _this._dbc.release(); })];
