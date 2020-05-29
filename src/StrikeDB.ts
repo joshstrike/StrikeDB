@@ -72,15 +72,16 @@ export class Pool {
     public hasPersistent(handle:string):boolean {
         return (this._getPSByHandle(handle) ? true : false);
     }
-    public async preparePersistent(handle:string,opts:StatementOpts):Promise<void> {
-        if (this._getPSByHandle(handle)) throw new Error(`Statement '${handle}' already exists!`);
+    public async preparePersistent(handle:string,opts:StatementOpts):Promise<boolean> {
+        //if (this._getPSByHandle(handle)) throw new Error(`Statement '${handle}' already exists!`);
         let _okStatement:PersistentStatement = this._persistentStatements.find((p)=>!p.conn.err);
         let conn:Connection = _okStatement ? _okStatement.conn : await this.getConnection();
+        if (conn.err) return (false)
         opts.uuid = true;
         let origOpts = Object.assign({},opts);
         let stm:Statement = await conn.prepare(opts);
         this._persistentStatements.push({handle:handle,conn:conn,stm:stm,origOpts:origOpts});
-        console.log(opts);
+        return (true);
     }
     public async executePersistent(handle,values?:any,returnNew?:boolean):Promise<NonExecutableStatement> {
         let ps:PersistentStatement = this._getPSByHandle(handle);
@@ -88,10 +89,12 @@ export class Pool {
         await ps.stm.execute(values,returnNew).catch((s)=>s);
         if (ps.conn.err) {
             await ps.conn.release();
-            this._persistentStatements.splice(this._persistentStatements.indexOf(ps),1);
-            await this.preparePersistent(handle, ps.origOpts);
-            ps = this._getPSByHandle(handle);
-            await ps.stm.execute(values,returnNew).catch((s)=>s);
+            let ok:boolean = await this.preparePersistent(handle, ps.origOpts);
+            if (ok) {
+                this._persistentStatements.splice(this._persistentStatements.indexOf(ps),1);
+                ps = this._getPSByHandle(handle);
+                await ps.stm.execute(values,returnNew).catch((s)=>s);
+            }
         }
         return (ps.stm);
     }
@@ -102,7 +105,7 @@ export class Pool {
         try {
             await ps.stm.deallocate();
         } catch (e) {}
-        if (!this._persistentStatements.length) await ps.conn.release();
+        if (!this._persistentStatements.filter((p)=>p.conn==ps.conn).length) await ps.conn.release();
     }
 }
 
@@ -159,7 +162,7 @@ export class Statement {
             return(this);
         }
         
-        let varstr:string = await this._use(v);
+        let vars:string[] = await this._use(v);
         
         if (this._dbc.err) { //_dbc.err will be set by _use if there's an internal problem with any SET.
             this.err = this._dbc.err;
@@ -168,6 +171,8 @@ export class Statement {
         }
         
         //Create a new execution statement. We return the new one to replace this one.
+        let varstr:string = '';
+        if (vars.length) varstr = "USING "+vars.join(',');
         let _s:string = `EXECUTE stm_${this.prepID} ${varstr};`;
         if (this._dbc.logQueries) console.log(_s);
         //_query() / _act() fills in any stm.err as well as the connection's err.
@@ -175,6 +180,16 @@ export class Statement {
         this.err = stm.err;
         this.result = stm.result;
         this.fields = stm.fields;
+        
+        //clean up the session vars
+        if (vars.length) {
+            let p:Promise<Statement>[] = [];
+            for (let u of vars) p.push(this._dbc._act('query',{sql:`SET ${u}=NULL;`}));
+            let s:Statement[] = await Promise.all(p).catch((e:Statement)=>{
+                this._dbc.err = e.err; return([e]);
+            });
+        }
+
         if (stm.err) {
             if (this._dbc.rejectErrors) return Promise.reject(stm);
         }
@@ -211,24 +226,27 @@ export class Statement {
      * Sets up the user-allocated vars for the execution and returns a string to put into EXECUTE with those sql vars.
      * @param values
      */
-    protected async _use(values:any[]):Promise<string> {
-        if (!values || !values.length) return ('');
+    protected async _use(values:any[]):Promise<string[]> {
+        if (!values || !values.length) return ([]);
         //increment the statement's useID prior to every execution to preserve variables held for other executions.
         //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
         //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
         this.useID++;
-        let varstr:string = "USING ";
+        let vars:string[] = [];
         let p:Promise<Statement>[] = [];
+        let unsetters:string[] = [];
         for (let k:number=0;k < values.length;k++) {
             let _val:string = values[k]===null ? 'NULL' : `'${values[k]}'`;
-            let _s:string = `SET @${this.prepID}_${k}_${this.useID}=${_val};`;
+            let _key:string = `@${this.prepID}_${k}_${this.useID}`;
+            let _s:string = `SET ${_key}=${_val};`;
+            unsetters.push(_key);
             if (this._dbc.logQueries) console.log(_s);
             p.push(this._dbc._act('query',{sql:_s},true,true)); //SET @a_${useID}=1
-            varstr += (k > 0 ? "," : "")+`@${this.prepID}_${k}_${this.useID}`; //USING @a, @b... returned to the execution statement.
+            vars.push(`@${this.prepID}_${k}_${this.useID}`); //USING @a, @b... returned to the execution statement.
         }
         //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
         await Promise.all(p).catch((e:Statement)=>{ this._dbc.err = e.err; });
-        return (varstr);
+        return (vars);
     }
     public async deallocate():Promise<Statement> {
         //Deallocation is crucial when using pooled connections.
@@ -239,7 +257,7 @@ export class Statement {
 }
 export class NonExecutableStatement extends Statement {
     public async execute(values?:any,returnNew?:boolean):Promise<Statement> {
-        throw new Error('Cannot execute a PersistentStatement directly.');
+        throw new Error('Cannot execute a persistent statement directly.');
     }
 }
 

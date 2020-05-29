@@ -151,8 +151,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0:
-                            if (this._getPSByHandle(handle))
-                                throw new Error("Statement '" + handle + "' already exists!");
                             _okStatement = this._persistentStatements.find(function (p) { return !p.conn.err; });
                             if (!_okStatement) return [3 /*break*/, 1];
                             _a = _okStatement.conn;
@@ -163,21 +161,22 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             _b.label = 3;
                         case 3:
                             conn = _a;
+                            if (conn.err)
+                                return [2 /*return*/, (false)];
                             opts.uuid = true;
                             origOpts = Object.assign({}, opts);
                             return [4 /*yield*/, conn.prepare(opts)];
                         case 4:
                             stm = _b.sent();
                             this._persistentStatements.push({ handle: handle, conn: conn, stm: stm, origOpts: origOpts });
-                            console.log(opts);
-                            return [2 /*return*/];
+                            return [2 /*return*/, (true)];
                     }
                 });
             });
         };
         Pool.prototype.executePersistent = function (handle, values, returnNew) {
             return __awaiter(this, void 0, void 0, function () {
-                var ps;
+                var ps, ok;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -191,10 +190,11 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             return [4 /*yield*/, ps.conn.release()];
                         case 2:
                             _a.sent();
-                            this._persistentStatements.splice(this._persistentStatements.indexOf(ps), 1);
                             return [4 /*yield*/, this.preparePersistent(handle, ps.origOpts)];
                         case 3:
-                            _a.sent();
+                            ok = _a.sent();
+                            if (!ok) return [3 /*break*/, 5];
+                            this._persistentStatements.splice(this._persistentStatements.indexOf(ps), 1);
                             ps = this._getPSByHandle(handle);
                             return [4 /*yield*/, ps.stm.execute(values, returnNew).catch(function (s) { return s; })];
                         case 4:
@@ -226,7 +226,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             e_1 = _a.sent();
                             return [3 /*break*/, 4];
                         case 4:
-                            if (!!this._persistentStatements.length) return [3 /*break*/, 6];
+                            if (!!this._persistentStatements.filter(function (p) { return p.conn == ps.conn; }).length) return [3 /*break*/, 6];
                             return [4 /*yield*/, ps.conn.release()];
                         case 5:
                             _a.sent();
@@ -254,7 +254,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         Statement.prototype.execute = function (values, returnNew) {
             return __awaiter(this, void 0, void 0, function () {
                 var _this = this;
-                var timeout, nestTables, typeCast, v, bindError, varstr, _s, stm;
+                var timeout, nestTables, typeCast, v, bindError, vars, varstr, _s, stm, p, _i, vars_1, u, s;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -294,13 +294,16 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             }
                             return [4 /*yield*/, this._use(v)];
                         case 1:
-                            varstr = _a.sent();
+                            vars = _a.sent();
                             if (this._dbc.err) {
                                 this.err = this._dbc.err;
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(this)]; //exec error in this part returns the initial setup statement. Error is on the connection.
                                 return [2 /*return*/, (this)];
                             }
+                            varstr = '';
+                            if (vars.length)
+                                varstr = "USING " + vars.join(',');
                             _s = "EXECUTE stm_" + this.prepID + " " + varstr + ";";
                             if (this._dbc.logQueries)
                                 console.log(_s);
@@ -310,6 +313,20 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             this.err = stm.err;
                             this.result = stm.result;
                             this.fields = stm.fields;
+                            if (!vars.length) return [3 /*break*/, 4];
+                            p = [];
+                            for (_i = 0, vars_1 = vars; _i < vars_1.length; _i++) {
+                                u = vars_1[_i];
+                                p.push(this._dbc._act('query', { sql: "SET " + u + "=NULL;" }));
+                            }
+                            return [4 /*yield*/, Promise.all(p).catch(function (e) {
+                                    _this._dbc.err = e.err;
+                                    return ([e]);
+                                })];
+                        case 3:
+                            s = _a.sent();
+                            _a.label = 4;
+                        case 4:
                             if (stm.err) {
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(stm)];
@@ -368,32 +385,35 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         Statement.prototype._use = function (values) {
             return __awaiter(this, void 0, void 0, function () {
                 var _this = this;
-                var varstr, p, k, _val, _s;
+                var vars, p, unsetters, k, _val, _key, _s;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
                             if (!values || !values.length)
-                                return [2 /*return*/, ('')];
+                                return [2 /*return*/, ([])];
                             //increment the statement's useID prior to every execution to preserve variables held for other executions.
                             //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
                             //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
                             this.useID++;
-                            varstr = "USING ";
+                            vars = [];
                             p = [];
+                            unsetters = [];
                             for (k = 0; k < values.length; k++) {
                                 _val = values[k] === null ? 'NULL' : "'" + values[k] + "'";
-                                _s = "SET @" + this.prepID + "_" + k + "_" + this.useID + "=" + _val + ";";
+                                _key = "@" + this.prepID + "_" + k + "_" + this.useID;
+                                _s = "SET " + _key + "=" + _val + ";";
+                                unsetters.push(_key);
                                 if (this._dbc.logQueries)
                                     console.log(_s);
                                 p.push(this._dbc._act('query', { sql: _s }, true, true)); //SET @a_${useID}=1
-                                varstr += (k > 0 ? "," : "") + ("@" + this.prepID + "_" + k + "_" + this.useID); //USING @a, @b... returned to the execution statement.
+                                vars.push("@" + this.prepID + "_" + k + "_" + this.useID); //USING @a, @b... returned to the execution statement.
                             }
                             //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
                             return [4 /*yield*/, Promise.all(p).catch(function (e) { _this._dbc.err = e.err; })];
                         case 1:
                             //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
                             _a.sent();
-                            return [2 /*return*/, (varstr)];
+                            return [2 /*return*/, (vars)];
                     }
                 });
             });
@@ -426,7 +446,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         NonExecutableStatement.prototype.execute = function (values, returnNew) {
             return __awaiter(this, void 0, void 0, function () {
                 return __generator(this, function (_a) {
-                    throw new Error('Cannot execute a PersistentStatement directly.');
+                    throw new Error('Cannot execute a persistent statement directly.');
                 });
             });
         };

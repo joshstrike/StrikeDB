@@ -27,11 +27,10 @@ If you set `rejectErrors` to false, it's a bit more like the PHP model where mys
 
 ------------
 
-### type **PoolOpts**={rejectErrors?:boolean, logQueries?:boolean, sessionTimezone?:string}
+### type **ConnOpts**={rejectErrors?:boolean, logQueries?:boolean, sessionTimezone?:string}
 
 - **rejectErrors : boolean**
 	If set, all further mysql and internal errors on this connection reject with a Statement or Connection (whatever you are awaiting) which both contain an `.err` parameter. If rejectErrors is true, you may `.catch((e)=>e.err.message)` on any call.
-
 
 - **logQueries : boolean** 
 If true, all queries performed on the connection are logged to the console.
@@ -44,27 +43,50 @@ By default, node-mysql parses DATE, DATETIME and TIMESTAMP types into Javascript
 	**Be aware that like all other session variables, timezones persist after you release the connection back to the pool.**
 
 ### class **Pool**
-**constructor(config:mysql.PoolConfig, opts?:PoolOpts)**
+**constructor(config:mysql.PoolConfig, connOpts?:ConnOpts)**
 
 Wrapper for mysql.pool. This is the only class you should instantiate directly. The parameter `config` is a standard PoolConfig.
 
-The `opts` parameter sets the default options that will be applied to any connection gotten from the pool via `getConnection()`. These can be overridden individually if you provide options to the `getConnection()` call.
+The `connOpts` parameter sets the default options that will be applied to any connection gotten from the pool via `getConnection()`. These can be overridden individually if you provide options to the `getConnection()` call.
 
-The default options if none are passed to the constructor are `rejectErrors:true`, `logQueries:true`, `sessionTimezone:undefined`. See **PoolOpts** for more detail.
+The default options if none are passed to the constructor are `rejectErrors:true`, `logQueries:true`, `sessionTimezone:undefined`. See **ConnOpts** for more detail.
+
+------------
+ - **getConnection(opts?:ConnOpts):Promise&lt;Connection&gt;**
+ Standard way to get a connection.
+
+- **hasPersistent(handle:string):boolean**
+Returns true if a persistent statement exists with the given handle, false otherwise.
+
+- **preparePersistent(handle:string, opts:StatementOpts) : Promise&lt;boolean&gt;**
+Creates a server-side prepared statement that will be automatically rebuilt on a new connection, should its connection be lost. Persistent statements can be called only via `executePersistent()`, which returns a statement with a readable error or result, but which cannot itself be re-executed.
+
+	Limitations: Persistent statements must have a handle which is unique to the pool. Their ConnOpts (including `rejectErrors`, `logQueries` and `sessionTimezone`) are set based upon the default options for the pool, because their connections are created and managed automatically. For the same reason, *persistent statements are not transaction-safe.*
+
+	Using persistent statements dedicates at least one  connection from the pool to holding and executing those statements. If a connection has already been attained for a persistent statement, and the connection has no errors, new calls to `preparePersistent()` will use the connection already allocated. However, if a connection goes down while multiple persistent statements are attempting to execute asynchronously, more than one connection may be allocated. Your pool's `connectionLimit` *must* be set higher than the number of unique persistent statements you plan to execute simultaneously without awaiting them, or else you may have an execution deadlock if those statements all try to seek a new connection at the same time.
+
+	Deallocating all the persistent statements on a given connection will free that connection.
+
+ - **executePersistent(handle:string, values?:any, returnNew?:boolean):Promise&lt;NonExecutableStatement&gt;**
+	Executes a persistent prepared statement by its handle. The returned statement may not be executed. If the internal statement's connection has disappeared, or in fact if any error occurs, the statement will be prepared again and then executed on a new connection.
+
+ - **deallocatePersistent(handle:string):Promise&lt;void&gt;**
+	 Deallocates the underlying statement and releases its connection if it's the last persistent statement built on that connection.
 
 ------------
 
- - **getConnection(opts?:PoolOpts):Promise<Connection>**
-
-------------
-
-### type StatementOpts = mysql.QueryOptions&{emulate?:boolean};
-StatementOpts are created on a Statement when it's prepared, or required when `Connection.exec()` is called. 
+### type StatementOpts = mysql.QueryOptions&{emulate?:boolean, uuid?:boolean};
+StatementOpts are created on a Statement *without values* when it's prepared, or required *with values* when `Connection.exec()` is called. 
 
 The parameters `timeout`, `nestTables` and `typeCast` are supported and are used in all executions of the Statement.
 
-`StatementOpts` are the same as `QueryOptions` except with one additional parameter, `emulate`, which determines whether the prepared statement is emulated in JS or is prepared server-side. During `prepare(opts:StatementOpts)` the `opts.values` field is ignored, since new values are expected to be passed when you `execute(values)`. All immediate calls such as `Connection.exec()` will take the `values` passed in the StatementOpts.
+`StatementOpts` are the same as `QueryOptions` except with two additional parameters:
 
+-  **emulate : boolean**
+Determines whether the prepared statement is emulated in JS or is prepared server-side.
+
+ - **uuid : boolean**
+ Determines whether to name the server-side prepared statement according to a looping internal numbering system (1 to 1000), in which case it may be overwritten later, or else to assign it a unique ID. Prepared statements with uuids should be deallocated later to avoid hitting mysql's limit. *Persistent (self-regenerating) prepared statements created on the Pool are always assigned a unique ID and must be deallocated via `Pool.deallocatePersistent()`.*
 ------------
 
 ### class **Statement**
