@@ -1,6 +1,6 @@
 import * as mysql from 'mysql';
 import * as util from 'util';
-//import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import { BindParser, Binding } from './BindParser';
 
 //leave this pretty loosely typed, generally we're expecting either an OKPacket or a rowset.
@@ -39,37 +39,79 @@ export class Util {
     }
 }
 
-export type PoolOpts = {rejectErrors?:boolean,logQueries?:boolean,sessionTimezone?:string};
+export type ConnOpts = {rejectErrors?:boolean,logQueries?:boolean,sessionTimezone?:string|boolean};
+export type PersistentStatement = {handle:string,conn:Connection,stm:Statement,origOpts:StatementOpts};
 export class Pool {
     public _pool:mysql.Pool;
-    private _opts:PoolOpts = {};
-    public constructor(config:mysql.PoolConfig,opts?:PoolOpts) {
-        opts = this._optsToDefault(opts);
-        this._opts = opts;
+    private _connOpts:ConnOpts = {rejectErrors:true,logQueries:true,sessionTimezone:false};
+    private _persistentStatements:PersistentStatement[] = [];
+    public constructor(config:mysql.PoolConfig,opts?:ConnOpts) {
+        if (opts) {
+            for (let k in opts) this._connOpts[k] = opts[k];
+        }
         this._pool = mysql.createPool(config);
     }
-    private _optsToDefault(o?:PoolOpts):PoolOpts {
-        if (!o) o = this._opts;
-        if (o.rejectErrors===undefined) o.rejectErrors = true;
-        if (o.logQueries===undefined) o.logQueries = true;
+    private _optsToDefault(o?:ConnOpts):ConnOpts {
+        if (!o) o = this._connOpts;
+        for (let k in this._connOpts) {
+            if (o[k]===undefined) o[k]=this._connOpts[k];
+        }
         return (o);
     }
-    public async getConnection(opts?:PoolOpts):Promise<Connection> {
-        opts = this._optsToDefault(opts);
+    public async getConnection(connOpts?:ConnOpts):Promise<Connection> {
+        let _connOpts:ConnOpts = this._optsToDefault(connOpts);
         let connPromise:()=>Promise<mysql.PoolConnection> = util.promisify(this._pool.getConnection).bind(this._pool);
-        let dbc:Connection = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(c,null,opts.rejectErrors,opts.logQueries);})
-                                        .catch((e:mysql.MysqlError)=>{return new Connection(null,e,opts.rejectErrors,opts.logQueries);});
-        if (opts.sessionTimezone) await dbc._query({sql:`SET SESSION time_zone='${opts.sessionTimezone}';`});
+        let dbc:Connection = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(_connOpts,c,null);})
+                                        .catch((e:mysql.MysqlError)=>{return new Connection(_connOpts,null,e);});
+        if (_connOpts.sessionTimezone) await dbc._query({sql:`SET SESSION time_zone='${_connOpts.sessionTimezone}';`});
         return (dbc);
+    }
+    private _getPSByHandle(handle:string):PersistentStatement {
+        return (this._persistentStatements.find((p)=>p.handle==handle));
+    }
+    public hasPersistent(handle:string):boolean {
+        return (this._getPSByHandle(handle) ? true : false);
+    }
+    public async preparePersistent(handle:string,opts:StatementOpts):Promise<void> {
+        if (this._getPSByHandle(handle)) throw new Error(`Statement '${handle}' already exists!`);
+        let _okStatement:PersistentStatement = this._persistentStatements.find((p)=>!p.conn.err);
+        let conn:Connection = _okStatement ? _okStatement.conn : await this.getConnection();
+        opts.uuid = true;
+        let origOpts = Object.assign({},opts);
+        let stm:Statement = await conn.prepare(opts);
+        this._persistentStatements.push({handle:handle,conn:conn,stm:stm,origOpts:origOpts});
+        console.log(opts);
+    }
+    public async executePersistent(handle,values?:any,returnNew?:boolean):Promise<NonExecutableStatement> {
+        let ps:PersistentStatement = this._getPSByHandle(handle);
+        if (!ps) throw new Error(`Cannot execute statement '${handle}' - statement was not found.`);
+        await ps.stm.execute(values,returnNew).catch((s)=>s);
+        if (ps.conn.err) {
+            await ps.conn.release();
+            this._persistentStatements.splice(this._persistentStatements.indexOf(ps),1);
+            await this.preparePersistent(handle, ps.origOpts);
+            ps = this._getPSByHandle(handle);
+            await ps.stm.execute(values,returnNew).catch((s)=>s);
+        }
+        return (ps.stm);
+    }
+    public async deallocatePersistent(handle:string):Promise<void> {
+        let ps:PersistentStatement = this._getPSByHandle(handle);
+        if (!ps) return;
+        this._persistentStatements.splice(this._persistentStatements.indexOf(ps),1);
+        try {
+            await ps.stm.deallocate();
+        } catch (e) {}
+        if (!this._persistentStatements.length) await ps.conn.release();
     }
 }
 
-export type StatementOpts = mysql.QueryOptions&{emulate?:boolean};
+export type StatementOpts = mysql.QueryOptions&{emulate?:boolean,uuid?:boolean};
 export class Statement {
     public err:mysql.MysqlError|{message:string};
     public result:Result;
     public fields:mysql.FieldInfo[];
-    public prepID:number = null; //set from Connection.prepare();
+    public prepID:number|string = null; //set from Connection.prepare();
     public keys:Binding[] = null; //set from Connection.prepare();
     public useID:number = 0;
 
@@ -96,7 +138,6 @@ export class Statement {
                 //kinda like !isset()
                 if (values[k.name]===undefined) { //don't throw if it's specified but intentionally null. The one time I've been glad there's a difference!
                     this.err = {message:`EXECUTION ERROR: Bound variable \`${k.name}\` is undefined`};
-                    this._dbc.err = this.err;
                 }
                 r.push(values[k.name]);
                 return (r);
@@ -113,7 +154,6 @@ export class Statement {
             return (this._emulatedExecute({sql:this._execOpts.sql,values:v,timeout:timeout,nestTables:nestTables,typeCast:typeCast},returnNew));
         
         if (this.prepID===null && !this.err) {
-            //throw new Error('Attempted to execute unprepared statement.');
             this.err = this._dbc.err = {message:`Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement.`};
             if (this._dbc.rejectErrors) return Promise.reject(this);
             return(this);
@@ -130,13 +170,14 @@ export class Statement {
         //Create a new execution statement. We return the new one to replace this one.
         let _s:string = `EXECUTE stm_${this.prepID} ${varstr};`;
         if (this._dbc.logQueries) console.log(_s);
+        //_query() / _act() fills in any stm.err as well as the connection's err.
         let stm:Statement = await this._dbc._query({sql:_s,timeout:timeout,nestTables:nestTables,typeCast:typeCast}).catch((e:Statement)=>{ return (e); });
-        if (stm.err) {
-            if (this._dbc.rejectErrors) return Promise.reject(stm);
-        }
         this.err = stm.err;
         this.result = stm.result;
         this.fields = stm.fields;
+        if (stm.err) {
+            if (this._dbc.rejectErrors) return Promise.reject(stm);
+        }
         if (returnNew) return (stm); //return new returns the EXECUTE .sql, whereas the original statement retains the original opts created by .prepare().
         return (this);
     }
@@ -144,7 +185,7 @@ export class Statement {
      * Alternate shunt for executing w/o actually setting up a server prepared statement.
      * @param values
      */
-    private async _emulatedExecute(opts?:mysql.QueryOptions,returnNew?:boolean):Promise<Statement> {
+    protected async _emulatedExecute(opts?:mysql.QueryOptions,returnNew?:boolean):Promise<Statement> {
         console.log('start emulated')
 
         let stm:Statement;
@@ -170,7 +211,7 @@ export class Statement {
      * Sets up the user-allocated vars for the execution and returns a string to put into EXECUTE with those sql vars.
      * @param values
      */
-    private async _use(values:any[]):Promise<string> {
+    protected async _use(values:any[]):Promise<string> {
         if (!values || !values.length) return ('');
         //increment the statement's useID prior to every execution to preserve variables held for other executions.
         //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
@@ -180,10 +221,10 @@ export class Statement {
         let p:Promise<Statement>[] = [];
         for (let k:number=0;k < values.length;k++) {
             let _val:string = values[k]===null ? 'NULL' : `'${values[k]}'`;
-            let _s:string = `SET @${k}_${this.useID}=${_val};`;
+            let _s:string = `SET @${this.prepID}_${k}_${this.useID}=${_val};`;
             if (this._dbc.logQueries) console.log(_s);
             p.push(this._dbc._act('query',{sql:_s},true,true)); //SET @a_${useID}=1
-            varstr += (k > 0 ? "," : "")+`@${k}_${this.useID}`; //USING @a, @b... returned to the execution statement.
+            varstr += (k > 0 ? "," : "")+`@${this.prepID}_${k}_${this.useID}`; //USING @a, @b... returned to the execution statement.
         }
         //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
         await Promise.all(p).catch((e:Statement)=>{ this._dbc.err = e.err; });
@@ -196,13 +237,23 @@ export class Statement {
         return (this);
     }
 }
+export class NonExecutableStatement extends Statement {
+    public async execute(values?:any,returnNew?:boolean):Promise<Statement> {
+        throw new Error('Cannot execute a PersistentStatement directly.');
+    }
+}
 
 export class Connection {
     private _lastResult:Result;
     private _lastFields:mysql.FieldInfo[];
-    private _allocatedStatements:number[] = [];
-    public constructor(public conn?:mysql.PoolConnection, public err?:mysql.MysqlError|{message:string,fatal?:string}, public rejectErrors:boolean = true, public logQueries?:boolean) {}
+    public constructor(public opts?:ConnOpts, public conn?:mysql.PoolConnection, public err?:mysql.MysqlError|{message:string,fatal?:string}) {}
     
+    public get rejectErrors():boolean {
+        return (this.opts.rejectErrors);
+    }
+    public get logQueries():boolean {
+        return (this.opts.logQueries);
+    }
     /**
      * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Statement.
      * The statement is never prepared or executed, it is just assembled here from the options and the call's result.
@@ -265,8 +316,7 @@ export class Connection {
     }
     public async prepare(opts:StatementOpts):Promise<Statement> {
         //opts.values are ignored in prepare.
-        //let prepID:string = uuidv4();
-        let prepID:number = NameFactory.NUM;
+        let prepID:number|string = opts.uuid ? uuidv4().replace(/-/g,'') : NameFactory.NUM;
         let sql:string = opts.sql;
     
         let keys:Binding[]; //leave statement keys undefined if passing an array of values for ? ...define only if rewriting the query.
@@ -317,7 +367,6 @@ export class Connection {
             if (this.rejectErrors) return Promise.reject(stm);
             return (stm);
         }
-        console.log('execute w/',opts);
         await stm.execute(opts.values).catch((e:Statement)=>{ return (e); });
         if (!stm.result || stm.err) {
             if (this.rejectErrors) return Promise.reject(stm);
@@ -341,8 +390,8 @@ export class Connection {
     public get lastInsertID():number {
         return (this._lastResult ? this._lastResult.insertId : null);
     }
-    public release():void {
-        if (this.conn) this.conn.release();
+    public async release():Promise<void> {
+        if (this.conn) await this.conn.release();
         this.conn = null;
     }
 }

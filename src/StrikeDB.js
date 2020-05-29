@@ -1,3 +1,13 @@
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = Object.setPrototypeOf ||
+        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -39,14 +49,14 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (v !== undefined) module.exports = v;
     }
     else if (typeof define === "function" && define.amd) {
-        define(["require", "exports", "mysql", "util", "./BindParser"], factory);
+        define(["require", "exports", "mysql", "util", "uuid", "./BindParser"], factory);
     }
 })(function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var mysql = require("mysql");
     var util = require("util");
-    //import { v4 as uuidv4 } from 'uuid';
+    var uuid_1 = require("uuid");
     var BindParser_1 = require("./BindParser");
     var NameFactory = (function () {
         function NameFactory() {
@@ -90,38 +100,138 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     exports.Util = Util;
     var Pool = (function () {
         function Pool(config, opts) {
-            this._opts = {};
-            opts = this._optsToDefault(opts);
-            this._opts = opts;
+            this._connOpts = { rejectErrors: true, logQueries: true, sessionTimezone: false };
+            this._persistentStatements = [];
+            if (opts) {
+                for (var k in opts)
+                    this._connOpts[k] = opts[k];
+            }
             this._pool = mysql.createPool(config);
         }
         Pool.prototype._optsToDefault = function (o) {
             if (!o)
-                o = this._opts;
-            if (o.rejectErrors === undefined)
-                o.rejectErrors = true;
-            if (o.logQueries === undefined)
-                o.logQueries = true;
+                o = this._connOpts;
+            for (var k in this._connOpts) {
+                if (o[k] === undefined)
+                    o[k] = this._connOpts[k];
+            }
             return (o);
         };
-        Pool.prototype.getConnection = function (opts) {
+        Pool.prototype.getConnection = function (connOpts) {
             return __awaiter(this, void 0, void 0, function () {
-                var connPromise, dbc;
+                var _connOpts, connPromise, dbc;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
-                            opts = this._optsToDefault(opts);
+                            _connOpts = this._optsToDefault(connOpts);
                             connPromise = util.promisify(this._pool.getConnection).bind(this._pool);
-                            return [4 /*yield*/, connPromise().then(function (c) { return new Connection(c, null, opts.rejectErrors, opts.logQueries); })
-                                    .catch(function (e) { return new Connection(null, e, opts.rejectErrors, opts.logQueries); })];
+                            return [4 /*yield*/, connPromise().then(function (c) { return new Connection(_connOpts, c, null); })
+                                    .catch(function (e) { return new Connection(_connOpts, null, e); })];
                         case 1:
                             dbc = _a.sent();
-                            if (!opts.sessionTimezone) return [3 /*break*/, 3];
-                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + opts.sessionTimezone + "';" })];
+                            if (!_connOpts.sessionTimezone) return [3 /*break*/, 3];
+                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + _connOpts.sessionTimezone + "';" })];
                         case 2:
                             _a.sent();
                             _a.label = 3;
                         case 3: return [2 /*return*/, (dbc)];
+                    }
+                });
+            });
+        };
+        Pool.prototype._getPSByHandle = function (handle) {
+            return (this._persistentStatements.find(function (p) { return p.handle == handle; }));
+        };
+        Pool.prototype.hasPersistent = function (handle) {
+            return (this._getPSByHandle(handle) ? true : false);
+        };
+        Pool.prototype.preparePersistent = function (handle, opts) {
+            return __awaiter(this, void 0, void 0, function () {
+                var _okStatement, conn, _a, origOpts, stm;
+                return __generator(this, function (_b) {
+                    switch (_b.label) {
+                        case 0:
+                            if (this._getPSByHandle(handle))
+                                throw new Error("Statement '" + handle + "' already exists!");
+                            _okStatement = this._persistentStatements.find(function (p) { return !p.conn.err; });
+                            if (!_okStatement) return [3 /*break*/, 1];
+                            _a = _okStatement.conn;
+                            return [3 /*break*/, 3];
+                        case 1: return [4 /*yield*/, this.getConnection()];
+                        case 2:
+                            _a = _b.sent();
+                            _b.label = 3;
+                        case 3:
+                            conn = _a;
+                            opts.uuid = true;
+                            origOpts = Object.assign({}, opts);
+                            return [4 /*yield*/, conn.prepare(opts)];
+                        case 4:
+                            stm = _b.sent();
+                            this._persistentStatements.push({ handle: handle, conn: conn, stm: stm, origOpts: origOpts });
+                            console.log(opts);
+                            return [2 /*return*/];
+                    }
+                });
+            });
+        };
+        Pool.prototype.executePersistent = function (handle, values, returnNew) {
+            return __awaiter(this, void 0, void 0, function () {
+                var ps;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            ps = this._getPSByHandle(handle);
+                            if (!ps)
+                                throw new Error("Cannot execute statement '" + handle + "' - statement was not found.");
+                            return [4 /*yield*/, ps.stm.execute(values, returnNew).catch(function (s) { return s; })];
+                        case 1:
+                            _a.sent();
+                            if (!ps.conn.err) return [3 /*break*/, 5];
+                            return [4 /*yield*/, ps.conn.release()];
+                        case 2:
+                            _a.sent();
+                            this._persistentStatements.splice(this._persistentStatements.indexOf(ps), 1);
+                            return [4 /*yield*/, this.preparePersistent(handle, ps.origOpts)];
+                        case 3:
+                            _a.sent();
+                            ps = this._getPSByHandle(handle);
+                            return [4 /*yield*/, ps.stm.execute(values, returnNew).catch(function (s) { return s; })];
+                        case 4:
+                            _a.sent();
+                            _a.label = 5;
+                        case 5: return [2 /*return*/, (ps.stm)];
+                    }
+                });
+            });
+        };
+        Pool.prototype.deallocatePersistent = function (handle) {
+            return __awaiter(this, void 0, void 0, function () {
+                var ps, e_1;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            ps = this._getPSByHandle(handle);
+                            if (!ps)
+                                return [2 /*return*/];
+                            this._persistentStatements.splice(this._persistentStatements.indexOf(ps), 1);
+                            _a.label = 1;
+                        case 1:
+                            _a.trys.push([1, 3, , 4]);
+                            return [4 /*yield*/, ps.stm.deallocate()];
+                        case 2:
+                            _a.sent();
+                            return [3 /*break*/, 4];
+                        case 3:
+                            e_1 = _a.sent();
+                            return [3 /*break*/, 4];
+                        case 4:
+                            if (!!this._persistentStatements.length) return [3 /*break*/, 6];
+                            return [4 /*yield*/, ps.conn.release()];
+                        case 5:
+                            _a.sent();
+                            _a.label = 6;
+                        case 6: return [2 /*return*/];
                     }
                 });
             });
@@ -162,7 +272,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     //kinda like !isset()
                                     if (values[k.name] === undefined) {
                                         _this.err = { message: "EXECUTION ERROR: Bound variable `" + k.name + "` is undefined" };
-                                        _this._dbc.err = _this.err;
                                     }
                                     r.push(values[k.name]);
                                     return (r);
@@ -178,7 +287,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             if (this._execOpts.emulate)
                                 return [2 /*return*/, (this._emulatedExecute({ sql: this._execOpts.sql, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }, returnNew))];
                             if (this.prepID === null && !this.err) {
-                                //throw new Error('Attempted to execute unprepared statement.');
                                 this.err = this._dbc.err = { message: "Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement." };
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(this)];
@@ -199,13 +307,13 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             return [4 /*yield*/, this._dbc._query({ sql: _s, timeout: timeout, nestTables: nestTables, typeCast: typeCast }).catch(function (e) { return (e); })];
                         case 2:
                             stm = _a.sent();
+                            this.err = stm.err;
+                            this.result = stm.result;
+                            this.fields = stm.fields;
                             if (stm.err) {
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(stm)];
                             }
-                            this.err = stm.err;
-                            this.result = stm.result;
-                            this.fields = stm.fields;
                             if (returnNew)
                                 return [2 /*return*/, (stm)]; //return new returns the EXECUTE .sql, whereas the original statement retains the original opts created by .prepare().
                             return [2 /*return*/, (this)];
@@ -274,11 +382,11 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             p = [];
                             for (k = 0; k < values.length; k++) {
                                 _val = values[k] === null ? 'NULL' : "'" + values[k] + "'";
-                                _s = "SET @" + k + "_" + this.useID + "=" + _val + ";";
+                                _s = "SET @" + this.prepID + "_" + k + "_" + this.useID + "=" + _val + ";";
                                 if (this._dbc.logQueries)
                                     console.log(_s);
                                 p.push(this._dbc._act('query', { sql: _s }, true, true)); //SET @a_${useID}=1
-                                varstr += (k > 0 ? "," : "") + ("@" + k + "_" + this.useID); //USING @a, @b... returned to the execution statement.
+                                varstr += (k > 0 ? "," : "") + ("@" + this.prepID + "_" + k + "_" + this.useID); //USING @a, @b... returned to the execution statement.
                             }
                             //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
                             return [4 /*yield*/, Promise.all(p).catch(function (e) { _this._dbc.err = e.err; })];
@@ -310,15 +418,41 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         return Statement;
     }());
     exports.Statement = Statement;
+    var NonExecutableStatement = (function (_super) {
+        __extends(NonExecutableStatement, _super);
+        function NonExecutableStatement() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        NonExecutableStatement.prototype.execute = function (values, returnNew) {
+            return __awaiter(this, void 0, void 0, function () {
+                return __generator(this, function (_a) {
+                    throw new Error('Cannot execute a PersistentStatement directly.');
+                });
+            });
+        };
+        return NonExecutableStatement;
+    }(Statement));
+    exports.NonExecutableStatement = NonExecutableStatement;
     var Connection = (function () {
-        function Connection(conn, err, rejectErrors, logQueries) {
-            if (rejectErrors === void 0) { rejectErrors = true; }
+        function Connection(opts, conn, err) {
+            this.opts = opts;
             this.conn = conn;
             this.err = err;
-            this.rejectErrors = rejectErrors;
-            this.logQueries = logQueries;
-            this._allocatedStatements = [];
         }
+        Object.defineProperty(Connection.prototype, "rejectErrors", {
+            get: function () {
+                return (this.opts.rejectErrors);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(Connection.prototype, "logQueries", {
+            get: function () {
+                return (this.opts.logQueries);
+            },
+            enumerable: true,
+            configurable: true
+        });
         /**
          * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Statement.
          * The statement is never prepared or executed, it is just assembled here from the options and the call's result.
@@ -416,7 +550,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0:
-                            prepID = NameFactory.NUM;
+                            prepID = opts.uuid ? uuid_1.v4().replace(/-/g, '') : NameFactory.NUM;
                             sql = opts.sql;
                             bindingRes = BindParser_1.BindParser.InlineBindings(sql);
                             if (bindingRes.bindings.length) {
@@ -480,7 +614,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     return [2 /*return*/, Promise.reject(stm)];
                                 return [2 /*return*/, (stm)];
                             }
-                            console.log('execute w/', opts);
                             return [4 /*yield*/, stm.execute(opts.values).catch(function (e) { return (e); })];
                         case 2:
                             _a.sent();
@@ -546,9 +679,21 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             configurable: true
         });
         Connection.prototype.release = function () {
-            if (this.conn)
-                this.conn.release();
-            this.conn = null;
+            return __awaiter(this, void 0, void 0, function () {
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            if (!this.conn) return [3 /*break*/, 2];
+                            return [4 /*yield*/, this.conn.release()];
+                        case 1:
+                            _a.sent();
+                            _a.label = 2;
+                        case 2:
+                            this.conn = null;
+                            return [2 /*return*/];
+                    }
+                });
+            });
         };
         return Connection;
     }());
