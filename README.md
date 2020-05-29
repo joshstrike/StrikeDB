@@ -40,7 +40,7 @@ By default, node-mysql parses DATE, DATETIME and TIMESTAMP types into Javascript
 
 	**`sessionTimezone`**, if it is set on a pool or an individual connection,  calls `SET SESSION time_zone=${sessionTimezone}` prior to executing any other SQL.  It may be used in conjunction with PoolConfig's timezone to align the two, or used with dateStrings.
 	
-	**Be aware that like all other session variables, timezones persist after you release the connection back to the pool.**
+	**Be aware that like all other session variables, timezones persist after you release the connection back to the pool, if no default `sessionTimezone` is set on the pool.**
 
 ### class **Pool**
 **constructor(config:mysql.PoolConfig, connOpts?:ConnOpts)**
