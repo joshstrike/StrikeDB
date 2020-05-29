@@ -5,7 +5,7 @@ class Test2 {
     public pool:DB.Pool;
     public constructor() {
         //Use a familiar PoolConfig:
-        let config:mysql.PoolConfig = {host:'localhost',user:'root',password:'ayayay',database:'NBA',
+        let config:mysql.PoolConfig = {host:'localhost',user:'my_user',password:'my_password',database:'NBA',
                                         supportBigNumbers:true,waitForConnections:true,connectionLimit:10,multipleStatements:true};
         //Set up a pool which you'll call to get DBConnection objects. 
         this.pool = new DB.Pool(config);
