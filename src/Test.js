@@ -47,17 +47,37 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     var DB = require("./StrikeDB");
     var Test2 = (function () {
         function Test2() {
-            var _this = this;
             //Use a familiar PoolConfig:
-            var config = { host: 'localhost', user: 'my_user', password: 'my_password', database: 'NBA',
+            var config = { host: 'localhost', user: 'root', password: 'ayayay', database: 'NBA',
                 supportBigNumbers: true, waitForConnections: true, connectionLimit: 10, multipleStatements: true };
             //Set up a pool which you'll call to get DBConnection objects. 
             this.pool = new DB.Pool(config);
-            this.asyncTests().then(function () { return _this.otherTests().then(function () { return _this.rejectionTest(); }); });
+            this.run();
         }
+        Test2.prototype.run = function () {
+            return __awaiter(this, void 0, void 0, function () {
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0: return [4 /*yield*/, this.asyncTests()];
+                        case 1:
+                            _a.sent();
+                            return [4 /*yield*/, this.otherTests()];
+                        case 2:
+                            _a.sent();
+                            return [4 /*yield*/, this.persistentTest()];
+                        case 3:
+                            _a.sent();
+                            return [4 /*yield*/, this.rejectionTest()];
+                        case 4:
+                            _a.sent();
+                            return [2 /*return*/];
+                    }
+                });
+            });
+        };
         Test2.prototype.asyncTests = function () {
             return __awaiter(this, void 0, void 0, function () {
-                var conn, stm, newStm, p, _i, _a, team, statements;
+                var conn, stm, p, _i, _a, team, queries;
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0: return [4 /*yield*/, this.pool.getConnection({ rejectErrors: false, logQueries: true })];
@@ -75,27 +95,43 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 console.log(stm.err);
                             else
                                 console.log(stm.result);
-                            return [4 /*yield*/, stm.execute({ homeID: 'DEN' }, true)];
-                        case 4:
-                            newStm = _b.sent();
-                            if (newStm.err)
-                                console.log(newStm.err, newStm._execOpts.sql);
-                            else
-                                console.log(newStm.result);
                             p = [];
                             for (_i = 0, _a = ['BOS', 'CHI', 'MEM']; _i < _a.length; _i++) {
                                 team = _a[_i];
-                                p.push(stm.execute({ homeID: team }, true));
+                                p.push(stm.execute({ homeID: team }));
                             }
                             return [4 /*yield*/, Promise.all(p)];
-                        case 5:
-                            statements = _b.sent();
-                            console.log(statements.map(function (s) { return s.result[0]; }));
+                        case 4:
+                            queries = _b.sent();
+                            console.log(queries.map(function (s) { return s.result[0]; }));
                             //deallocate the server-side prepared statement. Important on server-side executions if you're not planning to close the connection for a long time.
                             //This is not necessary if you prepared the statement using emulation.
                             stm.deallocate();
                             //remember to release the connection.
                             conn.release();
+                            return [2 /*return*/];
+                    }
+                });
+            });
+        };
+        Test2.prototype.persistentTest = function () {
+            return __awaiter(this, void 0, void 0, function () {
+                var p, _i, _a, team, queries;
+                return __generator(this, function (_b) {
+                    switch (_b.label) {
+                        case 0: return [4 /*yield*/, this.pool.preparePersistent('test', { sql: "SELECT * FROM games WHERE homeID=:homeID LIMIT 1" })];
+                        case 1:
+                            _b.sent();
+                            p = [];
+                            for (_i = 0, _a = ['BOS', 'CHI', 'MEM']; _i < _a.length; _i++) {
+                                team = _a[_i];
+                                p.push(this.pool.executePersistent('test', { homeID: team }));
+                            }
+                            return [4 /*yield*/, Promise.all(p)];
+                        case 2:
+                            queries = _b.sent();
+                            console.log(queries.map(function (s) { return s.result[0]; }));
+                            this.pool.deallocatePersistent('test');
                             return [2 /*return*/];
                     }
                 });

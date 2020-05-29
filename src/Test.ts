@@ -5,15 +5,17 @@ class Test2 {
     public pool:DB.Pool;
     public constructor() {
         //Use a familiar PoolConfig:
-        let config:mysql.PoolConfig = {host:'localhost',user:'my_user',password:'my_password',database:'NBA',
+        let config:mysql.PoolConfig = {host:'localhost',user:'root',password:'ayayay',database:'NBA',
                                         supportBigNumbers:true,waitForConnections:true,connectionLimit:10,multipleStatements:true};
-        
         //Set up a pool which you'll call to get DBConnection objects. 
         this.pool = new DB.Pool(config);
-        
-        this.asyncTests().then(
-                ()=>this.otherTests().then(
-                        ()=>this.rejectionTest()));
+        this.run();
+    }
+    public async run():Promise<void> {
+        await this.asyncTests();
+        await this.otherTests();
+        await this.persistentTest();
+        await this.rejectionTest();
     }
     public async asyncTests():Promise<void> {
         //Get a connection from the pool. You will be preparing statements on this connection. 
@@ -26,19 +28,15 @@ class Test2 {
         //now execute it:
         await stm.execute({homeID:'ATL'});
         if (stm.err) console.log(stm.err); else console.log(stm.result);
-        
-        //execute it again... note that if the second param (returnNew) is not true, the original statement's result and err will be overwritten.
-        let newStm:DB.Statement = await stm.execute({homeID:'DEN'},true);
-        if (newStm.err) console.log(newStm.err, newStm._execOpts.sql); else console.log(newStm.result);
-        
+                
         //async with promises:
-        let p:Promise<DB.Statement>[] = [];
+        let p:Promise<DB.Query>[] = [];
         for (let team of ['BOS','CHI','MEM']) {
-            p.push(stm.execute({homeID:team}, true));
+            p.push(stm.execute({homeID:team}));
         }
         //wait for three separate statements, each with its own err or result, executed asynchronously server-side.
-        let statements:DB.Statement[] = await Promise.all(p);
-        console.log(statements.map((s)=>s.result[0]));
+        let queries:DB.Query[] = await Promise.all(p);
+        console.log(queries.map((s)=>s.result[0]));
         
         //deallocate the server-side prepared statement. Important on server-side executions if you're not planning to close the connection for a long time.
         //This is not necessary if you prepared the statement using emulation.
@@ -46,6 +44,17 @@ class Test2 {
         
         //remember to release the connection.
         conn.release();
+    }
+    public async persistentTest():Promise<void> {
+        await this.pool.preparePersistent('test', {sql:`SELECT * FROM games WHERE homeID=:homeID LIMIT 1`});
+        let p:Promise<DB.Query>[] = [];
+        for (let team of ['BOS','CHI','MEM']) {
+            p.push(this.pool.executePersistent('test', {homeID:team}));
+        }
+        //wait for three separate statements, each with its own err or result, executed asynchronously server-side.
+        let queries:DB.Query[] = await Promise.all(p);
+        console.log(queries.map((s)=>s.result[0]));
+        this.pool.deallocatePersistent('test')
     }
     public async otherTests():Promise<void> {
         let conn:DB.Connection = await this.pool.getConnection({rejectErrors:false,logQueries:true});
@@ -66,7 +75,7 @@ class Test2 {
             else console.log(stm2.result);
         
         //If you only need to execute something once, you can do it via exec(), which also automatically deallocates:
-        let stm3:DB.Statement = await conn.exec({sql:`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`,values:{table:'games',homeID:'ATL'},emulate:true});
+        let stm3:DB.Query = await conn.exec({sql:`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`,values:{table:'games',homeID:'ATL'},emulate:true});
         if (stm3.err) console.log(stm3.err);
             else console.log(stm3.result);
         

@@ -1,5 +1,4 @@
 
-
 ## **StrikeDB**
 ### **Promisified server-side prepared statements for node mysqljs**
 
@@ -52,27 +51,48 @@ The `connOpts` parameter sets the default options that will be applied to any co
 The default options if none are passed to the constructor are `rejectErrors:true`, `logQueries:true`, `sessionTimezone:undefined`. See **ConnOpts** for more detail.
 
 ------------
- - **getConnection(opts?:ConnOpts):Promise&lt;Connection&gt;**
- Standard way to get a connection.
+ - **getConnection(opts?:ConnOpts, enqueueTimeout:number):Promise&lt;Connection&gt;**
+ This is the way to get a `StrikeDB.Connection` object, and the starting point to any further code. `enqueueTimeout` is the milliseconds to wait for a connection. It supersedes any other timeout parameters for the pool (if it is shorter), and *does* include time when the connection is enqueued. Set to zero for no timeout.
 
 - **hasPersistent(handle:string):boolean**
 Returns true if a persistent statement exists with the given handle, false otherwise.
 
 - **preparePersistent(handle:string, opts:StatementOpts) : Promise&lt;boolean&gt;**
-Creates a server-side prepared statement that will be automatically rebuilt on a new connection, should its connection be lost. Persistent statements can be called only via `executePersistent()`, which returns a statement with a readable error or result, but which cannot itself be re-executed.
+Creates a server-side prepared statement that will be automatically rebuilt if its connection is lost. Persistent statements can only be called via `executePersistent(handle,values)`.
 
-	Limitations: Persistent statements must have a handle which is unique to the pool. Their ConnOpts (including `rejectErrors`, `logQueries` and `sessionTimezone`) are set based upon the default options for the pool, because their connections are created and managed automatically. For the same reason, *persistent statements are not transaction-safe.*
+	Persistent statements must have a handle which is unique to the pool. Creating a new persistent statement will overwrite an existing one with the same handle.
 
-	Using persistent statements dedicates at least one  connection from the pool to holding and executing those statements. If a connection has already been attained for a persistent statement, and the connection has no errors, new calls to `preparePersistent()` will use the connection already allocated. However, if a connection goes down while multiple persistent statements are attempting to execute asynchronously, more than one connection may be allocated. Your pool's `connectionLimit` *must* be set higher than the number of unique persistent statements you plan to execute simultaneously without awaiting them, or else you may have an execution deadlock if those statements all try to seek a new connection at the same time.
+	ConnOpts for persistent statements (including `rejectErrors`, `logQueries` and `sessionTimezone`) are set based upon the default options for the pool, because their connections are created and managed automatically. For the same reason, *persistent statements are not transaction-safe.*
 
-	Deallocating all the persistent statements on a given connection will free that connection.
+	Using persistent statements dedicates at least one  connection from the pool to holding and executing those statements. If a connection has already been acquired for one persistent statement, and the connection has no errors, new calls to `preparePersistent()` will use the connection already allocated. However, if a connection goes down while multiple persistent statements are attempting to execute asynchronously, more than one connection may be allocated. Your pool's `connectionLimit` *must* be set higher than the number of unique persistent statements you plan to execute simultaneously without awaiting them, or else you may have a deadlock if those statements all try to seek a new connection at the same time. It is for this reason also that `Pool.getConnection()` has an enqueue timeout. If a persistent statement cannot get a connection in time, it will return an error.
 
- - **executePersistent(handle:string, values?:any, returnNew?:boolean):Promise&lt;NonExecutableStatement&gt;**
+	Deallocating all the persistent statements on a given connection will free that connection and release it to the pool.
+
+ - **executePersistent(handle:string, values?:any):Promise&lt;Query&gt;**
 	Executes a persistent prepared statement by its handle. The returned statement may not be executed. If the internal statement's connection has disappeared, or in fact if any error occurs, the statement will be prepared again and then executed on a new connection.
 
  - **deallocatePersistent(handle:string):Promise&lt;void&gt;**
 	 Deallocates the underlying statement and releases its connection if it's the last persistent statement built on that connection.
 
+------------
+
+### class **Query**
+
+The standard class returned from all simple queries via `Connection.query()`, etc, as well as by executions of prepared statements. This class should not be instantiated directly.
+
+ - **err : mysql.MysqlError|{message:string}**
+ An object which can be relied on to provide at least a message if an error occurred.
+ 
+ - **result : mysql.OKPacket&any[]**
+ The result of a query if one came back. 
+ 
+ - **fields : mysql.FieldInfo[]**
+ Standard mysql field descriptions.
+
+ - **_dbc : Connection**
+ 
+ - **_opts : mysql.QueryOptions**
+	 In queries returned from prepared statement executions, the `_opts.sql` will generally contain the last raw SQL executed, not the original query string of the statement.
 ------------
 
 ### type StatementOpts = mysql.QueryOptions&{emulate?:boolean, uuid?:boolean};
@@ -90,9 +110,8 @@ Determines whether the prepared statement is emulated in JS or is prepared serve
 ------------
 
 ### class **Statement**
-A statement generated by a connection. This class is prepared or returned by `Connection.exec()` and should not be instantiated directly.
+A statement generated by a connection. This class is prepared or returned by `Connection.prepare()` and should not be instantiated directly.
 
-------------
 
  - **err : mysql.MysqlError|{message:string}**
  An object which can be relied on to provide at least a message if an error occurred.
@@ -110,10 +129,10 @@ A statement generated by a connection. This class is prepared or returned by `Co
  Set by `Connection.prepare()`, this array contains the bindings found in the query, in order of their position, for comparison with the value object or array you will execute.
  
  - **useID : number**
- Internal id for setting remote variables prior to each execution. Specifically,  we call`SET @k_useID=value;`, in which `k` is the numeric position of the bound variable in the binding array and `useID` is incremented each time you execute the prepared statement. This prevents asynchronous executions from conflicting. See also **returnNew** below.
+ Internal id for setting remote variables prior to each execution. Specifically,  we call`SET @prepID_k_useID=value;`, in which `prepID` is the id of the statement, `k` is the numeric position of the bound variable in the binding array and `useID` is incremented each time  the statement is executed. This prevents asynchronous executions from conflicting.
  
- - **execute(values?:any, returnNew?:boolean):Promise&lt;Statement&gt;**
- Execute a prepared statement. 
+ - **execute(values?:any):Promise&lt;Query&gt;**
+ Execute a prepared statement returning a `Query` with the results or errors. Last results and errors are also recorded on the `Statement` itself.
  
  - - **values : any**
  `values` can be either a flat array if the statement was prepared using ??, ?, or it can be a plain object if you prepared with :name.
@@ -129,11 +148,6 @@ A statement generated by a connection. This class is prepared or returned by `Co
  `SELECT * FROM ?? WHERE id=?`
  Your values need to be a flat array in the order of the question marks, such as:
  `['my_table',1]`
- 
-- - **returnNew : boolean**
-If `true`, executing this statement will return a new statement with the result and/or execution error. This is necessary if you're executing a single prepared statement many times asynchronously in a `Promise.all()`. Executing with `returnNew` allows you to collect a list of new statements, each with the original query but with its own results or errors. 
-
-	Normally, `execute()` both updates and returns the original statement. ***New instances of `Statement` returned from `returnNew` are clones. If they are real server-side prepared statements, they cannot be executed again. Only the original statement may be re-executed.*** If the original Statement is not emulated and you try to re-execute the resulting new statement, it will return an `.err` that you have tried to execute an unprepared statement. This is because the resulting new Statement was not prepared server-side. The new Statement returned lacks a `prepID`, intentionally, to prevent it from being executed against existing set @vars. Preventing re-execution of cloned statements is to prevent thread races on their stored variable names.
 
 - **deallocate() : Promise&lt;Statement&gt;**
 Deallocates a prepared statement stored on the server. StrikeDB by default allows up to 1000 uniquely named prepared statements ***per pool*** (stm_0 through stm_999). It will then overwrite the first one. If you prepare a statement, set it aside, then prepare 1000 more statements, then execute the first one, you'll be surprised to find it executes the one you prepared last. The good news is, this means you don't usually have to worry about deallocating them. You can also increase the 1000 limit in the `NameFactory` class. The point of this is that we don't expect a prepared statement to be held that long and executed later.
@@ -147,7 +161,6 @@ Deallocates a prepared statement stored on the server. StrikeDB by default allow
 ### class **Connection**
 Wrapper for a mysql PoolConnection. Should be created from `Pool.getConnection()`
 
-------------
 
 - **conn : mysql.PoolConnection**
 The underlying PoolConnection.
@@ -171,7 +184,7 @@ Prepare a new statement. By default, the statement is prepared on the server. **
 
 	`opts.values` is ignored when preparing a statement. The values should be sent when you execute it.
 
-- **exec(opts:StatementOpts) : Promise&lt;Statement&gt;**
+- **exec(opts:StatementOpts) : Promise&lt;Query&gt;**
 Prepare, execute, and return a single statement, deallocating the prepared statement from the server afterwards.
 
 	Takes a classic mysqljs QueryOptions which should look like:
@@ -179,11 +192,11 @@ Prepare, execute, and return a single statement, deallocating the prepared state
 	or 
 	`{sql:'SELECT * FROM table WHERE id=:id ,values:{id:1}}`
 
-- **beginTransaction(opts?:mysql.QueryOptions) : Promise&lt;Statement&rt;**
+- **beginTransaction(opts?:mysql.QueryOptions) : Promise&lt;Query&gt;**
 
-- **rollback(opts?:mysql.QueryOptions) : Promise&lt;Statement&gt;**
+- **rollback(opts?:mysql.QueryOptions) : Promise&lt;Query&gt;**
 
-- **commit(opts?:mysql.QueryOptions) : Promise&lt;Statement&rt;**
+- **commit(opts?:mysql.QueryOptions) : Promise&lt;Query&gt;**
 
 - **release() : void**
 Release the connection back to the pool.

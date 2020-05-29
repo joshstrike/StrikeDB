@@ -58,11 +58,15 @@ export class Pool {
         }
         return (o);
     }
-    public async getConnection(connOpts?:ConnOpts):Promise<Connection> {
+    public async getConnection(connOpts?:ConnOpts,enqueueTimeout:number = 10000):Promise<Connection> {
         let _connOpts:ConnOpts = this._optsToDefault(connOpts);
         let connPromise:()=>Promise<mysql.PoolConnection> = util.promisify(this._pool.getConnection).bind(this._pool);
-        let dbc:Connection = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(_connOpts,c,null);})
-                                        .catch((e:mysql.MysqlError)=>{return new Connection(_connOpts,null,e);});
+        let dbc:Connection = await new Promise<Connection>(async (resolve,reject)=>{
+            if (enqueueTimeout > 0) setTimeout(()=>{ if (!dbc) reject(); }, enqueueTimeout);
+            let dbc:Connection = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(_connOpts,c,null);})
+                                            .catch((e:mysql.MysqlError)=>{return new Connection(_connOpts,null,e);});
+            resolve(dbc);
+        }).catch(()=>null);
         if (_connOpts.sessionTimezone) await dbc._query({sql:`SET SESSION time_zone='${_connOpts.sessionTimezone}';`});
         return (dbc);
     }
@@ -73,30 +77,39 @@ export class Pool {
         return (this._getPSByHandle(handle) ? true : false);
     }
     public async preparePersistent(handle:string,opts:StatementOpts):Promise<boolean> {
-        //if (this._getPSByHandle(handle)) throw new Error(`Statement '${handle}' already exists!`);
-        let _okStatement:PersistentStatement = this._persistentStatements.find((p)=>!p.conn.err);
+        let _okStatement:PersistentStatement = this._persistentStatements.find((p)=>p.conn.conn && !p.conn.err);
         let conn:Connection = _okStatement ? _okStatement.conn : await this.getConnection();
-        if (conn.err) return (false)
+        if (!conn || conn.err) return (false);
+        
+        let existing:PersistentStatement = this._getPSByHandle(handle);
+        if (existing) this._persistentStatements.splice(this._persistentStatements.indexOf(existing),1);
+        
         opts.uuid = true;
         let origOpts = Object.assign({},opts);
         let stm:Statement = await conn.prepare(opts);
         this._persistentStatements.push({handle:handle,conn:conn,stm:stm,origOpts:origOpts});
         return (true);
     }
-    public async executePersistent(handle,values?:any,returnNew?:boolean):Promise<NonExecutableStatement> {
+    public async executePersistent(handle,values?:any):Promise<Query> {
         let ps:PersistentStatement = this._getPSByHandle(handle);
         if (!ps) throw new Error(`Cannot execute statement '${handle}' - statement was not found.`);
-        await ps.stm.execute(values,returnNew).catch((s)=>s);
+        let qry:Query = await ps.stm.execute(values).catch((s)=>s);
         if (ps.conn.err) {
             await ps.conn.release();
+            for (let f of this._persistentStatements) { console.log(f.handle,f.conn.conn ? f.conn.conn.threadId : 'none')}
             let ok:boolean = await this.preparePersistent(handle, ps.origOpts);
             if (ok) {
-                this._persistentStatements.splice(this._persistentStatements.indexOf(ps),1);
+                //The old ps has been replaced on a successful connection. Reference the new one for execution and return.
                 ps = this._getPSByHandle(handle);
-                await ps.stm.execute(values,returnNew).catch((s)=>s);
+                qry = await ps.stm.execute(values).catch((s)=>s);
+            } else {
+                //The old ps has not been replaced; no connection could be made.
+                ps.stm.err = {message:'Could not get a connection.'};
+                qry = ps.stm;
             }
         }
-        return (ps.stm);
+        if (qry.err && this._connOpts.rejectErrors) return Promise.reject(qry);
+        return (qry);
     }
     public async deallocatePersistent(handle:string):Promise<void> {
         let ps:PersistentStatement = this._getPSByHandle(handle);
@@ -109,22 +122,22 @@ export class Pool {
     }
 }
 
-export type StatementOpts = mysql.QueryOptions&{emulate?:boolean,uuid?:boolean};
-export class Statement {
+export class Query {
     public err:mysql.MysqlError|{message:string};
     public result:Result;
     public fields:mysql.FieldInfo[];
+    public constructor(public _dbc:Connection, public _opts:mysql.QueryOptions) {}
+}
+export type StatementOpts = mysql.QueryOptions&{emulate?:boolean,uuid?:boolean};
+export class Statement extends Query {
     public prepID:number|string = null; //set from Connection.prepare();
     public keys:Binding[] = null; //set from Connection.prepare();
     public useID:number = 0;
 
-    public constructor(public _dbc:Connection, public _execOpts?:StatementOpts) {}
-    
-    //returnNew yields a new Statement, as opposed to returning _this_. The most recent result is available on _this_, but 
-    //if looping through executes asynchronously you will want to clone new statements from them to get the results.
-    //New statements from returnNew possess the EXECUTE statement as their opts.sql (in server-side mode), as opposed to the PREPARE statement. 
-    //They also do not contain a prepID or keys, and cannot be re-executed and are only for gathering errors and results.
-    public async execute(values?:any,returnNew?:boolean):Promise<Statement> {
+    public constructor(public _dbc:Connection, public _execOpts?:StatementOpts) {
+        super(_dbc, _execOpts);
+    }
+    public async execute(values?:any):Promise<Query> {
         let timeout:number, nestTables:any, typeCast:mysql.TypeCast;
         if (this._execOpts) {
             timeout = this._execOpts.timeout;
@@ -154,7 +167,7 @@ export class Statement {
         
         //convert to a standard query.
         if (this._execOpts.emulate) 
-            return (this._emulatedExecute({sql:this._execOpts.sql,values:v,timeout:timeout,nestTables:nestTables,typeCast:typeCast},returnNew));
+            return (this._emulatedExecute({sql:this._execOpts.sql,values:v,timeout:timeout,nestTables:nestTables,typeCast:typeCast}));
         
         if (this.prepID===null && !this.err) {
             this.err = this._dbc.err = {message:`Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement.`};
@@ -176,51 +189,45 @@ export class Statement {
         let _s:string = `EXECUTE stm_${this.prepID} ${varstr};`;
         if (this._dbc.logQueries) console.log(_s);
         //_query() / _act() fills in any stm.err as well as the connection's err.
-        let stm:Statement = await this._dbc._query({sql:_s,timeout:timeout,nestTables:nestTables,typeCast:typeCast}).catch((e:Statement)=>{ return (e); });
-        this.err = stm.err;
-        this.result = stm.result;
-        this.fields = stm.fields;
+        let qry:Query = await this._dbc._query({sql:_s,timeout:timeout,nestTables:nestTables,typeCast:typeCast}).catch((e:Statement)=>{ return (e); });
+        this.err = qry.err;
+        this.result = qry.result;
+        this.fields = qry.fields;
         
         //clean up the session vars
         if (vars.length) {
-            let p:Promise<Statement>[] = [];
+            let p:Promise<Query>[] = [];
             for (let u of vars) p.push(this._dbc._act('query',{sql:`SET ${u}=NULL;`}));
-            let s:Statement[] = await Promise.all(p).catch((e:Statement)=>{
+            let s:Query[] = await Promise.all(p).catch((e:Query)=>{
                 this._dbc.err = e.err; return([e]);
             });
         }
 
-        if (stm.err) {
-            if (this._dbc.rejectErrors) return Promise.reject(stm);
-        }
-        if (returnNew) return (stm); //return new returns the EXECUTE .sql, whereas the original statement retains the original opts created by .prepare().
-        return (this);
+        if (qry.err && this._dbc.rejectErrors) return Promise.reject(qry);
+        return (qry);
     }
     /**
      * Alternate shunt for executing w/o actually setting up a server prepared statement.
      * @param values
      */
-    protected async _emulatedExecute(opts?:mysql.QueryOptions,returnNew?:boolean):Promise<Statement> {
-        console.log('start emulated')
-
-        let stm:Statement;
-        if (this._dbc.rejectErrors) stm = await this._dbc._act('query',opts).catch((s:Statement)=>s); //must handle internally
-            else stm = await this._dbc._act('query',opts);
+    protected async _emulatedExecute(opts?:mysql.QueryOptions):Promise<Statement|Query> {
+        let qry:Query;
+        if (this._dbc.rejectErrors) qry = await this._dbc._act('query',opts).catch((s:Statement)=>s); //must handle internally
+            else qry = await this._dbc._act('query',opts);
         
         if (this._dbc.logQueries) console.log('Executed (emulated):',opts.sql,'with',opts.values);
 
-        stm.keys = this.keys;
-        this.err = stm.err;
-        this.result = stm.result;
-        this.fields = stm.fields;
-
-        if (stm.err) {
-            this._dbc.err = stm.err;
-            if (this._dbc.rejectErrors) return Promise.reject(stm);
-        }
         //copy the newly generated stm values to this.
-        if (returnNew) return (stm);
-        return (this);
+        this.err = qry.err;
+        this.result = qry.result;
+        this.fields = qry.fields;
+
+        if (qry.err) {
+            this._dbc.err = qry.err;
+            if (this._dbc.rejectErrors) return Promise.reject(qry);
+        }
+        
+        return (qry);
     }
     /**
      * Sets up the user-allocated vars for the execution and returns a string to put into EXECUTE with those sql vars.
@@ -233,7 +240,7 @@ export class Statement {
         //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
         this.useID++;
         let vars:string[] = [];
-        let p:Promise<Statement>[] = [];
+        let p:Promise<Query>[] = [];
         let unsetters:string[] = [];
         for (let k:number=0;k < values.length;k++) {
             let _val:string = values[k]===null ? 'NULL' : `'${values[k]}'`;
@@ -253,11 +260,6 @@ export class Statement {
         if (this._execOpts.emulate) return (this);
         await this._dbc._act('query',{sql:`DEALLOCATE PREPARE stm_${this.prepID}`},false,true).catch((e:Statement)=>this._dbc.release());
         return (this);
-    }
-}
-export class NonExecutableStatement extends Statement {
-    public async execute(values?:any,returnNew?:boolean):Promise<Statement> {
-        throw new Error('Cannot execute a persistent statement directly.');
     }
 }
 
@@ -280,39 +282,39 @@ export class Connection {
      * @param overwriteResult
      * @param forceRejectErrors
      */
-    public async _act(func:string,opts?:mysql.QueryOptions,overwriteResult:boolean = true,forceRejectErrors?:boolean):Promise<Statement> {
+    public async _act(func:string,opts?:mysql.QueryOptions,overwriteResult:boolean = true,forceRejectErrors?:boolean):Promise<Query> {
         //By definition, 'emulate' is irrelevant for _act statements. They are never prepared, but assembled here and run immediately raw.
         //For example, PREPARE and EXECUTE are both handled through _act().
-        let stm:Statement = new Statement(this,opts);
+        let qry:Query = new Query(this,opts);
         if (!this.conn || (this.err && this.err.fatal)) {
-            stm.err = this.err;
-            if (this.rejectErrors || forceRejectErrors) return Promise.reject(stm);
-            return (stm);
+            qry.err = this.err;
+            if (this.rejectErrors || forceRejectErrors) return Promise.reject(qry);
+            return (qry);
         }
         //Automated promisifying strips out the fieldinfo, which we want to retain. Promisify by hand. Always resolve here. Reject later if there's an err.
         let q:Promise<mysql.QueryFunction> = new Promise((resolve)=>{
             this.conn[func].bind(this.conn)(opts,(err:mysql.MysqlError,result:any,fields:mysql.FieldInfo[])=>{
                 if (err) {
-                    stm.err = err;
+                    qry.err = err;
                     return resolve();
                 }
                 if (overwriteResult) {
                     this._lastResult = result;
                     this._lastFields = fields;
                 }
-                stm.result = result;
-                stm.fields = fields;
+                qry.result = result;
+                qry.fields = fields;
                 return resolve();
             });
         });
         await q;
         
         //if there's an error, either reject or return this object with the error.
-        if (stm.err) {
-            this.err = stm.err;
-            if (this.rejectErrors || forceRejectErrors) return Promise.reject(stm);
+        if (qry.err) {
+            this.err = qry.err;
+            if (this.rejectErrors || forceRejectErrors) return Promise.reject(qry);
         }
-        return (stm);
+        return (qry);
     }
     public async changeUser(opts:mysql.ConnectionOptions):Promise<Connection> {
         if (!this.conn || (this.err && this.err.fatal)) {
@@ -326,11 +328,11 @@ export class Connection {
         }
         return (this);
     }
-    public async _query(opts:mysql.QueryOptions,overwriteResult:boolean = true):Promise<Statement> {
+    public async _query(opts:mysql.QueryOptions,overwriteResult:boolean = true):Promise<Query> {
         //Raw query to generate a statement. Don't call directly. Call exec().
         //MUST BE FORMATTED WITH ? AND A RAW ARRAY IF USING VALUES. CANNOT INTERPRET A KEYED OBJECT. NOT PREPARED, NOT NULL-SAFE.
-        let stm:Statement = await this._act('query',opts,overwriteResult);
-        return (stm);
+        let qry:Query = await this._act('query',opts,overwriteResult);
+        return (qry);
     }
     public async prepare(opts:StatementOpts):Promise<Statement> {
         //opts.values are ignored in prepare.
@@ -369,41 +371,45 @@ export class Connection {
         sql = sql.replace(/'/g,`\\'`);
         let _s:string = `PREPARE stm_${prepID} FROM '${sql}';`
         if (this.logQueries) console.log(_s);
-        //Don't catch here. Allow errors to bubble up. _act only rejects if rejectErrors is true, otherwise it returns a statement with an .err.
+
         opts.sql = _s;
-        let stm:Statement = await this._query(opts,false); //don't overwrite the connection _lastResult or _lastFields with the results of PREPARE queries.
-        stm.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
+        let nx:Query = await this._query(opts,false).catch((n)=>n); //don't overwrite the connection _lastResult or _lastFields with the results of PREPARE queries.
+        nx.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
+
+        let stm:Statement = new Statement(this,opts);
+        Object.assign(stm,nx);
         stm.prepID = prepID;
         stm.keys = keys;
+
         if (stm.err && this.rejectErrors) return Promise.reject(stm);
         return (stm);
     }
-    public async exec(opts:StatementOpts):Promise<Statement> {
+    public async exec(opts:StatementOpts):Promise<Query> {
         //Single query on a prepared statement. Deallocates the statement afterwards.
         let stm:Statement = await this.prepare({sql:opts.sql,timeout:opts.timeout,nestTables:opts.nestTables,typeCast:opts.typeCast,emulate:opts.emulate}).catch((e:Statement)=>{ return (e); });
         if (stm.err) {
             if (this.rejectErrors) return Promise.reject(stm);
             return (stm);
         }
-        await stm.execute(opts.values).catch((e:Statement)=>{ return (e); });
-        if (!stm.result || stm.err) {
-            if (this.rejectErrors) return Promise.reject(stm);
-            return (stm);
+        let qry:Query = await stm.execute(opts.values).catch((e:Statement)=>{ return (e); });
+        if (!qry.result || qry.err) {
+            if (this.rejectErrors) return Promise.reject(qry);
+            return (qry);
         }
         if (!opts.emulate) await stm.deallocate();
-        return (stm);
+        return (qry);
     }
-    public async beginTransaction(opts?:mysql.QueryOptions):Promise<Statement> {
-        let stm:Statement = await this._act('beginTransaction',opts);
-        return (stm);
+    public async beginTransaction(opts?:mysql.QueryOptions):Promise<Query> {
+        let qry:Query = await this._act('beginTransaction',opts);
+        return (qry);
     }
-    public async rollback(opts?:mysql.QueryOptions):Promise<Statement> {
-        let stm:Statement = await this._act('rollback',opts);
-        return (stm);
+    public async rollback(opts?:mysql.QueryOptions):Promise<Query> {
+        let qry:Query = await this._act('rollback',opts);
+        return (qry);
     }
-    public async commit(opts?:mysql.QueryOptions):Promise<Statement> {
-        let stm:Statement = await this._act('commit',opts);
-        return (stm);
+    public async commit(opts?:mysql.QueryOptions):Promise<Query> {
+        let qry:Query = await this._act('commit',opts);
+        return (qry);
     }
     public get lastInsertID():number {
         return (this._lastResult ? this._lastResult.insertId : null);

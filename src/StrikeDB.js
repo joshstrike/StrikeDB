@@ -117,16 +117,33 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             }
             return (o);
         };
-        Pool.prototype.getConnection = function (connOpts) {
+        Pool.prototype.getConnection = function (connOpts, enqueueTimeout) {
+            if (enqueueTimeout === void 0) { enqueueTimeout = 10000; }
             return __awaiter(this, void 0, void 0, function () {
+                var _this = this;
                 var _connOpts, connPromise, dbc;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
                             _connOpts = this._optsToDefault(connOpts);
                             connPromise = util.promisify(this._pool.getConnection).bind(this._pool);
-                            return [4 /*yield*/, connPromise().then(function (c) { return new Connection(_connOpts, c, null); })
-                                    .catch(function (e) { return new Connection(_connOpts, null, e); })];
+                            return [4 /*yield*/, new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
+                                    var dbc;
+                                    return __generator(this, function (_a) {
+                                        switch (_a.label) {
+                                            case 0:
+                                                if (enqueueTimeout > 0)
+                                                    setTimeout(function () { if (!dbc)
+                                                        reject(); }, enqueueTimeout);
+                                                return [4 /*yield*/, connPromise().then(function (c) { return new Connection(_connOpts, c, null); })
+                                                        .catch(function (e) { return new Connection(_connOpts, null, e); })];
+                                            case 1:
+                                                dbc = _a.sent();
+                                                resolve(dbc);
+                                                return [2 /*return*/];
+                                        }
+                                    });
+                                }); }).catch(function () { return null; })];
                         case 1:
                             dbc = _a.sent();
                             if (!_connOpts.sessionTimezone) return [3 /*break*/, 3];
@@ -147,11 +164,11 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         };
         Pool.prototype.preparePersistent = function (handle, opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var _okStatement, conn, _a, origOpts, stm;
+                var _okStatement, conn, _a, existing, origOpts, stm;
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0:
-                            _okStatement = this._persistentStatements.find(function (p) { return !p.conn.err; });
+                            _okStatement = this._persistentStatements.find(function (p) { return p.conn.conn && !p.conn.err; });
                             if (!_okStatement) return [3 /*break*/, 1];
                             _a = _okStatement.conn;
                             return [3 /*break*/, 3];
@@ -161,8 +178,11 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             _b.label = 3;
                         case 3:
                             conn = _a;
-                            if (conn.err)
+                            if (!conn || conn.err)
                                 return [2 /*return*/, (false)];
+                            existing = this._getPSByHandle(handle);
+                            if (existing)
+                                this._persistentStatements.splice(this._persistentStatements.indexOf(existing), 1);
                             opts.uuid = true;
                             origOpts = Object.assign({}, opts);
                             return [4 /*yield*/, conn.prepare(opts)];
@@ -174,33 +194,45 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
-        Pool.prototype.executePersistent = function (handle, values, returnNew) {
+        Pool.prototype.executePersistent = function (handle, values) {
             return __awaiter(this, void 0, void 0, function () {
-                var ps, ok;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
+                var ps, qry, _i, _a, f, ok;
+                return __generator(this, function (_b) {
+                    switch (_b.label) {
                         case 0:
                             ps = this._getPSByHandle(handle);
                             if (!ps)
                                 throw new Error("Cannot execute statement '" + handle + "' - statement was not found.");
-                            return [4 /*yield*/, ps.stm.execute(values, returnNew).catch(function (s) { return s; })];
+                            return [4 /*yield*/, ps.stm.execute(values).catch(function (s) { return s; })];
                         case 1:
-                            _a.sent();
-                            if (!ps.conn.err) return [3 /*break*/, 5];
+                            qry = _b.sent();
+                            if (!ps.conn.err) return [3 /*break*/, 6];
                             return [4 /*yield*/, ps.conn.release()];
                         case 2:
-                            _a.sent();
+                            _b.sent();
+                            for (_i = 0, _a = this._persistentStatements; _i < _a.length; _i++) {
+                                f = _a[_i];
+                                console.log(f.handle, f.conn.conn ? f.conn.conn.threadId : 'none');
+                            }
                             return [4 /*yield*/, this.preparePersistent(handle, ps.origOpts)];
                         case 3:
-                            ok = _a.sent();
+                            ok = _b.sent();
                             if (!ok) return [3 /*break*/, 5];
-                            this._persistentStatements.splice(this._persistentStatements.indexOf(ps), 1);
+                            //The old ps has been replaced on a successful connection. Reference the new one for execution and return.
                             ps = this._getPSByHandle(handle);
-                            return [4 /*yield*/, ps.stm.execute(values, returnNew).catch(function (s) { return s; })];
+                            return [4 /*yield*/, ps.stm.execute(values).catch(function (s) { return s; })];
                         case 4:
-                            _a.sent();
-                            _a.label = 5;
-                        case 5: return [2 /*return*/, (ps.stm)];
+                            qry = _b.sent();
+                            return [3 /*break*/, 6];
+                        case 5:
+                            //The old ps has not been replaced; no connection could be made.
+                            ps.stm.err = { message: 'Could not get a connection.' };
+                            qry = ps.stm;
+                            _b.label = 6;
+                        case 6:
+                            if (qry.err && this._connOpts.rejectErrors)
+                                return [2 /*return*/, Promise.reject(qry)];
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
@@ -239,22 +271,29 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         return Pool;
     }());
     exports.Pool = Pool;
-    var Statement = (function () {
-        function Statement(_dbc, _execOpts) {
+    var Query = (function () {
+        function Query(_dbc, _opts) {
             this._dbc = _dbc;
-            this._execOpts = _execOpts;
-            this.prepID = null; //set from Connection.prepare();
-            this.keys = null; //set from Connection.prepare();
-            this.useID = 0;
+            this._opts = _opts;
         }
-        //returnNew yields a new Statement, as opposed to returning _this_. The most recent result is available on _this_, but 
-        //if looping through executes asynchronously you will want to clone new statements from them to get the results.
-        //New statements from returnNew possess the EXECUTE statement as their opts.sql (in server-side mode), as opposed to the PREPARE statement. 
-        //They also do not contain a prepID or keys, and cannot be re-executed and are only for gathering errors and results.
-        Statement.prototype.execute = function (values, returnNew) {
+        return Query;
+    }());
+    exports.Query = Query;
+    var Statement = (function (_super) {
+        __extends(Statement, _super);
+        function Statement(_dbc, _execOpts) {
+            var _this = _super.call(this, _dbc, _execOpts) || this;
+            _this._dbc = _dbc;
+            _this._execOpts = _execOpts;
+            _this.prepID = null; //set from Connection.prepare();
+            _this.keys = null; //set from Connection.prepare();
+            _this.useID = 0;
+            return _this;
+        }
+        Statement.prototype.execute = function (values) {
             return __awaiter(this, void 0, void 0, function () {
                 var _this = this;
-                var timeout, nestTables, typeCast, v, bindError, vars, varstr, _s, stm, p, _i, vars_1, u, s;
+                var timeout, nestTables, typeCast, v, bindError, vars, varstr, _s, qry, p, _i, vars_1, u, s;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -285,7 +324,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             }
                             //convert to a standard query.
                             if (this._execOpts.emulate)
-                                return [2 /*return*/, (this._emulatedExecute({ sql: this._execOpts.sql, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }, returnNew))];
+                                return [2 /*return*/, (this._emulatedExecute({ sql: this._execOpts.sql, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }))];
                             if (this.prepID === null && !this.err) {
                                 this.err = this._dbc.err = { message: "Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement." };
                                 if (this._dbc.rejectErrors)
@@ -309,10 +348,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 console.log(_s);
                             return [4 /*yield*/, this._dbc._query({ sql: _s, timeout: timeout, nestTables: nestTables, typeCast: typeCast }).catch(function (e) { return (e); })];
                         case 2:
-                            stm = _a.sent();
-                            this.err = stm.err;
-                            this.result = stm.result;
-                            this.fields = stm.fields;
+                            qry = _a.sent();
+                            this.err = qry.err;
+                            this.result = qry.result;
+                            this.fields = qry.fields;
                             if (!vars.length) return [3 /*break*/, 4];
                             p = [];
                             for (_i = 0, vars_1 = vars; _i < vars_1.length; _i++) {
@@ -327,13 +366,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             s = _a.sent();
                             _a.label = 4;
                         case 4:
-                            if (stm.err) {
-                                if (this._dbc.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(stm)];
-                            }
-                            if (returnNew)
-                                return [2 /*return*/, (stm)]; //return new returns the EXECUTE .sql, whereas the original statement retains the original opts created by .prepare().
-                            return [2 /*return*/, (this)];
+                            if (qry.err && this._dbc.rejectErrors)
+                                return [2 /*return*/, Promise.reject(qry)];
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
@@ -342,38 +377,34 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
          * Alternate shunt for executing w/o actually setting up a server prepared statement.
          * @param values
          */
-        Statement.prototype._emulatedExecute = function (opts, returnNew) {
+        Statement.prototype._emulatedExecute = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var stm;
+                var qry;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
-                            console.log('start emulated');
                             if (!this._dbc.rejectErrors) return [3 /*break*/, 2];
                             return [4 /*yield*/, this._dbc._act('query', opts).catch(function (s) { return s; })];
                         case 1:
-                            stm = _a.sent(); //must handle internally
+                            qry = _a.sent(); //must handle internally
                             return [3 /*break*/, 4];
                         case 2: return [4 /*yield*/, this._dbc._act('query', opts)];
                         case 3:
-                            stm = _a.sent();
+                            qry = _a.sent();
                             _a.label = 4;
                         case 4:
                             if (this._dbc.logQueries)
                                 console.log('Executed (emulated):', opts.sql, 'with', opts.values);
-                            stm.keys = this.keys;
-                            this.err = stm.err;
-                            this.result = stm.result;
-                            this.fields = stm.fields;
-                            if (stm.err) {
-                                this._dbc.err = stm.err;
-                                if (this._dbc.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(stm)];
-                            }
                             //copy the newly generated stm values to this.
-                            if (returnNew)
-                                return [2 /*return*/, (stm)];
-                            return [2 /*return*/, (this)];
+                            this.err = qry.err;
+                            this.result = qry.result;
+                            this.fields = qry.fields;
+                            if (qry.err) {
+                                this._dbc.err = qry.err;
+                                if (this._dbc.rejectErrors)
+                                    return [2 /*return*/, Promise.reject(qry)];
+                            }
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
@@ -436,23 +467,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             });
         };
         return Statement;
-    }());
+    }(Query));
     exports.Statement = Statement;
-    var NonExecutableStatement = (function (_super) {
-        __extends(NonExecutableStatement, _super);
-        function NonExecutableStatement() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        NonExecutableStatement.prototype.execute = function (values, returnNew) {
-            return __awaiter(this, void 0, void 0, function () {
-                return __generator(this, function (_a) {
-                    throw new Error('Cannot execute a persistent statement directly.');
-                });
-            });
-        };
-        return NonExecutableStatement;
-    }(Statement));
-    exports.NonExecutableStatement = NonExecutableStatement;
     var Connection = (function () {
         function Connection(opts, conn, err) {
             this.opts = opts;
@@ -485,29 +501,29 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             if (overwriteResult === void 0) { overwriteResult = true; }
             return __awaiter(this, void 0, void 0, function () {
                 var _this = this;
-                var stm, q;
+                var qry, q;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
-                            stm = new Statement(this, opts);
+                            qry = new Query(this, opts);
                             if (!this.conn || (this.err && this.err.fatal)) {
-                                stm.err = this.err;
+                                qry.err = this.err;
                                 if (this.rejectErrors || forceRejectErrors)
-                                    return [2 /*return*/, Promise.reject(stm)];
-                                return [2 /*return*/, (stm)];
+                                    return [2 /*return*/, Promise.reject(qry)];
+                                return [2 /*return*/, (qry)];
                             }
                             q = new Promise(function (resolve) {
                                 _this.conn[func].bind(_this.conn)(opts, function (err, result, fields) {
                                     if (err) {
-                                        stm.err = err;
+                                        qry.err = err;
                                         return resolve();
                                     }
                                     if (overwriteResult) {
                                         _this._lastResult = result;
                                         _this._lastFields = fields;
                                     }
-                                    stm.result = result;
-                                    stm.fields = fields;
+                                    qry.result = result;
+                                    qry.fields = fields;
                                     return resolve();
                                 });
                             });
@@ -515,12 +531,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 1:
                             _a.sent();
                             //if there's an error, either reject or return this object with the error.
-                            if (stm.err) {
-                                this.err = stm.err;
+                            if (qry.err) {
+                                this.err = qry.err;
                                 if (this.rejectErrors || forceRejectErrors)
-                                    return [2 /*return*/, Promise.reject(stm)];
+                                    return [2 /*return*/, Promise.reject(qry)];
                             }
-                            return [2 /*return*/, (stm)];
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
@@ -553,20 +569,20 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         Connection.prototype._query = function (opts, overwriteResult) {
             if (overwriteResult === void 0) { overwriteResult = true; }
             return __awaiter(this, void 0, void 0, function () {
-                var stm;
+                var qry;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0: return [4 /*yield*/, this._act('query', opts, overwriteResult)];
                         case 1:
-                            stm = _a.sent();
-                            return [2 /*return*/, (stm)];
+                            qry = _a.sent();
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
         };
         Connection.prototype.prepare = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var prepID, sql, keys, bindingRes, _i, _a, b, stm_1, s, _s, stm;
+                var prepID, sql, keys, bindingRes, _i, _a, b, stm_1, s, _s, nx, stm;
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0:
@@ -606,12 +622,13 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             _s = "PREPARE stm_" + prepID + " FROM '" + sql + "';";
                             if (this.logQueries)
                                 console.log(_s);
-                            //Don't catch here. Allow errors to bubble up. _act only rejects if rejectErrors is true, otherwise it returns a statement with an .err.
                             opts.sql = _s;
-                            return [4 /*yield*/, this._query(opts, false)];
+                            return [4 /*yield*/, this._query(opts, false).catch(function (n) { return n; })];
                         case 1:
-                            stm = _b.sent();
-                            stm.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
+                            nx = _b.sent();
+                            nx.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
+                            stm = new Statement(this, opts);
+                            Object.assign(stm, nx);
                             stm.prepID = prepID;
                             stm.keys = keys;
                             if (stm.err && this.rejectErrors)
@@ -623,7 +640,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         };
         Connection.prototype.exec = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var stm;
+                var stm, qry;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0: return [4 /*yield*/, this.prepare({ sql: opts.sql, timeout: opts.timeout, nestTables: opts.nestTables, typeCast: opts.typeCast, emulate: opts.emulate }).catch(function (e) { return (e); })];
@@ -636,57 +653,57 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             }
                             return [4 /*yield*/, stm.execute(opts.values).catch(function (e) { return (e); })];
                         case 2:
-                            _a.sent();
-                            if (!stm.result || stm.err) {
+                            qry = _a.sent();
+                            if (!qry.result || qry.err) {
                                 if (this.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(stm)];
-                                return [2 /*return*/, (stm)];
+                                    return [2 /*return*/, Promise.reject(qry)];
+                                return [2 /*return*/, (qry)];
                             }
                             if (!!opts.emulate) return [3 /*break*/, 4];
                             return [4 /*yield*/, stm.deallocate()];
                         case 3:
                             _a.sent();
                             _a.label = 4;
-                        case 4: return [2 /*return*/, (stm)];
+                        case 4: return [2 /*return*/, (qry)];
                     }
                 });
             });
         };
         Connection.prototype.beginTransaction = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var stm;
+                var qry;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0: return [4 /*yield*/, this._act('beginTransaction', opts)];
                         case 1:
-                            stm = _a.sent();
-                            return [2 /*return*/, (stm)];
+                            qry = _a.sent();
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
         };
         Connection.prototype.rollback = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var stm;
+                var qry;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0: return [4 /*yield*/, this._act('rollback', opts)];
                         case 1:
-                            stm = _a.sent();
-                            return [2 /*return*/, (stm)];
+                            qry = _a.sent();
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
         };
         Connection.prototype.commit = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var stm;
+                var qry;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0: return [4 /*yield*/, this._act('commit', opts)];
                         case 1:
-                            stm = _a.sent();
-                            return [2 /*return*/, (stm)];
+                            qry = _a.sent();
+                            return [2 /*return*/, (qry)];
                     }
                 });
             });
