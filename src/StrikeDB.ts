@@ -120,6 +120,19 @@ export class Pool {
         } catch (e) {}
         if (!this._persistentStatements.filter((p)=>p.conn==ps.conn).length) await ps.conn.release();
     }
+    public async exec(statementOpts:StatementOpts,connOpts?:ConnOpts):Promise<Query> {
+        let conn:Connection = await this.getConnection(connOpts,1000);
+        if (!conn) {
+            let q:Query = new Query(conn,statementOpts);
+            q.err = {message:'Could not get a connection'};
+            if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors)) return Promise.reject(q);
+            return (q);
+        }
+        let q:Query = await conn.exec(statementOpts).catch((_q)=>_q);
+        conn.release();
+        if (q.err && conn.opts.rejectErrors) return (Promise.reject(q));
+        return (q);
+    }
 }
 
 export class Query {
@@ -237,7 +250,6 @@ export class Statement extends Query {
         if (!values || !values.length) return ([]);
         //increment the statement's useID prior to every execution to preserve variables held for other executions.
         //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
-        //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
         this.useID++;
         let vars:string[] = [];
         let p:Promise<Query>[] = [];
@@ -275,7 +287,7 @@ export class Connection {
         return (this.opts.logQueries);
     }
     /**
-     * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Statement.
+     * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Query.
      * The statement is never prepared or executed, it is just assembled here from the options and the call's result.
      * @param func
      * @param opts
@@ -329,7 +341,7 @@ export class Connection {
         return (this);
     }
     public async _query(opts:mysql.QueryOptions,overwriteResult:boolean = true):Promise<Query> {
-        //Raw query to generate a statement. Don't call directly. Call exec().
+        //Raw query. Don't call directly. Call exec().
         //MUST BE FORMATTED WITH ? AND A RAW ARRAY IF USING VALUES. CANNOT INTERPRET A KEYED OBJECT. NOT PREPARED, NOT NULL-SAFE.
         let qry:Query = await this._act('query',opts,overwriteResult);
         return (qry);
@@ -386,7 +398,7 @@ export class Connection {
     }
     public async exec(opts:StatementOpts):Promise<Query> {
         //Single query on a prepared statement. Deallocates the statement afterwards.
-        let stm:Statement = await this.prepare({sql:opts.sql,timeout:opts.timeout,nestTables:opts.nestTables,typeCast:opts.typeCast,emulate:opts.emulate}).catch((e:Statement)=>{ return (e); });
+        let stm:Statement = await this.prepare(opts).catch((e:Statement)=>{ return (e); });
         if (stm.err) {
             if (this.rejectErrors) return Promise.reject(stm);
             return (stm);

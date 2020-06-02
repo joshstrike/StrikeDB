@@ -268,6 +268,32 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 });
             });
         };
+        Pool.prototype.exec = function (statementOpts, connOpts) {
+            return __awaiter(this, void 0, void 0, function () {
+                var conn, q_1, q;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0: return [4 /*yield*/, this.getConnection(connOpts, 1000)];
+                        case 1:
+                            conn = _a.sent();
+                            if (!conn) {
+                                q_1 = new Query(conn, statementOpts);
+                                q_1.err = { message: 'Could not get a connection' };
+                                if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors))
+                                    return [2 /*return*/, Promise.reject(q_1)];
+                                return [2 /*return*/, (q_1)];
+                            }
+                            return [4 /*yield*/, conn.exec(statementOpts).catch(function (_q) { return _q; })];
+                        case 2:
+                            q = _a.sent();
+                            conn.release();
+                            if (q.err && conn.opts.rejectErrors)
+                                return [2 /*return*/, (Promise.reject(q))];
+                            return [2 /*return*/, (q)];
+                    }
+                });
+            });
+        };
         return Pool;
     }());
     exports.Pool = Pool;
