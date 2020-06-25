@@ -41,6 +41,8 @@ By default, node-mysql parses DATE, DATETIME and TIMESTAMP types into Javascript
 	
 	**Be aware that like all other session variables, timezones persist after you release the connection back to the pool, if no default `sessionTimezone` is set on the pool.**
 
+------------
+
 ### class **Pool**
 **constructor(config:mysql.PoolConfig, connOpts?:ConnOpts)**
 
@@ -50,7 +52,6 @@ The `connOpts` parameter sets the default options that will be applied to any co
 
 The default options if none are passed to the constructor are `rejectErrors:true`, `logQueries:true`, `sessionTimezone:undefined`. See **ConnOpts** for more detail.
 
-------------
  - **getConnection(opts?:ConnOpts, enqueueTimeout:number):Promise&lt;Connection&gt;**
  This is the way to get a `StrikeDB.Connection` object, and the starting point to any further code. `enqueueTimeout` is the milliseconds to wait for a connection. It supersedes any other timeout parameters for the pool (if it is shorter), and *does* include time when the connection is enqueued. Set to zero for no timeout.
 
