@@ -450,7 +450,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 return [2 /*return*/, ([])];
                             //increment the statement's useID prior to every execution to preserve variables held for other executions.
                             //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
-                            //Be sure to set returnNew==true in execute() if you want to use this behavior. Otherwise you'll only get the last statement on the connection.
                             this.useID++;
                             vars = [];
                             p = [];
@@ -516,7 +515,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             configurable: true
         });
         /**
-         * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Statement.
+         * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Query.
          * The statement is never prepared or executed, it is just assembled here from the options and the call's result.
          * @param func
          * @param opts
@@ -608,24 +607,26 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         };
         Connection.prototype.prepare = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var prepID, sql, keys, bindingRes, _i, _a, b, stm_1, s, _s, nx, stm;
+                var _opts, prepID, sql, keys, bindingRes, _i, _a, b, stm_1, s, _s, nx, stm;
                 return __generator(this, function (_b) {
                     switch (_b.label) {
                         case 0:
-                            prepID = opts.uuid ? uuid_1.v4().replace(/-/g, '') : NameFactory.NUM;
-                            sql = opts.sql;
+                            _opts = Object.assign({}, opts);
+                            _opts.values = null;
+                            prepID = _opts.uuid ? uuid_1.v4().replace(/-/g, '') : NameFactory.NUM;
+                            sql = _opts.sql;
                             bindingRes = BindParser_1.BindParser.InlineBindings(sql);
                             if (bindingRes.bindings.length) {
                                 sql = bindingRes.newSql;
                                 keys = bindingRes.bindings;
-                                if (!opts.emulate) {
+                                if (!_opts.emulate) {
                                     for (_i = 0, _a = bindingRes.bindings; _i < _a.length; _i++) {
                                         b = _a[_i];
                                         if (b.field)
                                             this.err = { message: "ERROR PREPARING STATEMENT. Could not bind ::" + b.name + ". Table and field bindings can only be used under emulation." };
                                     }
                                     if (this.err) {
-                                        stm_1 = new Statement(this, opts);
+                                        stm_1 = new Statement(this, _opts);
                                         stm_1.err = this.err;
                                         if (this.rejectErrors)
                                             return [2 /*return*/, Promise.reject(stm_1)];
@@ -635,9 +636,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             }
                             sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g, '$1<$3>$5'); //convert all `field`=? to the null-safe <=>
                             sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g, '!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
-                            if (opts.emulate) {
-                                opts.sql = sql;
-                                s = new Statement(this, opts);
+                            if (_opts.emulate) {
+                                _opts.sql = sql;
+                                s = new Statement(this, _opts);
                                 if (this.logQueries)
                                     console.log('Prepared (emulated):', sql);
                                 s.keys = keys;
@@ -648,12 +649,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             _s = "PREPARE stm_" + prepID + " FROM '" + sql + "';";
                             if (this.logQueries)
                                 console.log(_s);
-                            opts.sql = _s;
-                            return [4 /*yield*/, this._query(opts, false).catch(function (n) { return n; })];
+                            _opts.sql = _s;
+                            return [4 /*yield*/, this._query(_opts, false).catch(function (n) { return n; })];
                         case 1:
                             nx = _b.sent();
                             nx.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
-                            stm = new Statement(this, opts);
+                            stm = new Statement(this, _opts);
                             Object.assign(stm, nx);
                             stm.prepID = prepID;
                             stm.keys = keys;
@@ -669,7 +670,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 var stm, qry;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
-                        case 0: return [4 /*yield*/, this.prepare({ sql: opts.sql, timeout: opts.timeout, nestTables: opts.nestTables, typeCast: opts.typeCast, emulate: opts.emulate }).catch(function (e) { return (e); })];
+                        case 0: return [4 /*yield*/, this.prepare(opts).catch(function (e) { return (e); })];
                         case 1:
                             stm = _a.sent();
                             if (stm.err) {

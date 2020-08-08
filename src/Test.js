@@ -48,7 +48,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     var Test2 = (function () {
         function Test2() {
             //Use a familiar PoolConfig:
-            var config = { host: 'localhost', user: 'my_user', password: 'my_password', database: 'NBA',
+            var config = { host: 'localhost', user: 'mysql_user', password: 'mysql_password', database: 'NBA',
                 supportBigNumbers: true, waitForConnections: true, connectionLimit: 10, multipleStatements: true };
             //Set up a pool which you'll call to get DBConnection objects. 
             this.pool = new DB.Pool(config);

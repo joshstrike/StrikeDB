@@ -5,7 +5,7 @@ class Test2 {
     public pool:DB.Pool;
     public constructor() {
         //Use a familiar PoolConfig:
-        let config:mysql.PoolConfig = {host:'localhost',user:'my_user',password:'my_password',database:'NBA',
+        let config:mysql.PoolConfig = {host:'localhost',user:'mysql_user',password:'mysql_password',database:'NBA',
                                         supportBigNumbers:true,waitForConnections:true,connectionLimit:10,multipleStatements:true};
         //Set up a pool which you'll call to get DBConnection objects. 
         this.pool = new DB.Pool(config);
@@ -68,7 +68,6 @@ class Test2 {
 
         //You can escape table names with ::two colons. This also works in the ?? style. 
         //This uses emulated escaping. This is NOT allowed on server-side prepares.
-        //Set the second parameter of prepare() for emulated prepares. 
         let stm2:DB.Statement = await conn.prepare({sql:`SELECT * FROM ::table WHERE homeID=:homeID LIMIT 1`,emulate:true});
         await stm2.execute({table:'games',homeID:'ATL'});
         if (stm2.err) console.log(stm2.err);

@@ -347,22 +347,25 @@ export class Connection {
         return (qry);
     }
     public async prepare(opts:StatementOpts):Promise<Statement> {
-        //opts.values are ignored in prepare.
-        let prepID:number|string = opts.uuid ? uuidv4().replace(/-/g,'') : NameFactory.NUM;
-        let sql:string = opts.sql;
+        //opts.values must be ignored by prepare. They may be sent into exec but they can't be passed to the internal prepare _query.
+        let _opts:StatementOpts = Object.assign({}, opts);
+        _opts.values = null;
+        
+        let prepID:number|string = _opts.uuid ? uuidv4().replace(/-/g,'') : NameFactory.NUM;
+        let sql:string = _opts.sql;
     
         let keys:Binding[]; //leave statement keys undefined if passing an array of values for ? ...define only if rewriting the query.
         let bindingRes:{newSql:string,bindings:Binding[]} = BindParser.InlineBindings(sql);
         if (bindingRes.bindings.length) {
             sql = bindingRes.newSql;
             keys = bindingRes.bindings;
-            if (!opts.emulate) {
+            if (!_opts.emulate) {
                 for (let b of bindingRes.bindings) {
                     if (b.field) 
                         this.err = {message:`ERROR PREPARING STATEMENT. Could not bind ::${b.name}. Table and field bindings can only be used under emulation.`};
                 }
                 if (this.err) {
-                    let stm:Statement = new Statement(this,opts);
+                    let stm:Statement = new Statement(this,_opts);
                     stm.err = this.err;
                     if (this.rejectErrors) return Promise.reject(stm);
                     return (stm);
@@ -372,9 +375,9 @@ export class Connection {
         
         sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g,'$1<$3>$5'); //convert all `field`=? to the null-safe <=>
         sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g,'!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
-        if (opts.emulate) {
-            opts.sql = sql;
-            let s:Statement = new Statement(this,opts);
+        if (_opts.emulate) {
+            _opts.sql = sql;
+            let s:Statement = new Statement(this,_opts);
             if (this.logQueries) console.log('Prepared (emulated):',sql);
             s.keys = keys;
             return (s);
@@ -384,11 +387,11 @@ export class Connection {
         let _s:string = `PREPARE stm_${prepID} FROM '${sql}';`
         if (this.logQueries) console.log(_s);
 
-        opts.sql = _s;
-        let nx:Query = await this._query(opts,false).catch((n)=>n); //don't overwrite the connection _lastResult or _lastFields with the results of PREPARE queries.
+        _opts.sql = _s;
+        let nx:Query = await this._query(_opts,false).catch((n)=>n); //don't overwrite the connection _lastResult or _lastFields with the results of PREPARE queries.
         nx.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
 
-        let stm:Statement = new Statement(this,opts);
+        let stm:Statement = new Statement(this,_opts);
         Object.assign(stm,nx);
         stm.prepID = prepID;
         stm.keys = keys;
