@@ -8,7 +8,8 @@ export type Result = mysql.OkPacket&any[];
 export type Rejection = {err:mysql.MysqlError|{message:string}};
 
 class NameFactory {
-    //numbering of statement names. This range must be wide enough to 
+    //Numbering of prepared statement names. This range should be wide enough to accommodate the max number of normal 
+    //non-persistent statements expected to be allocated at any given time.
     private static _NUM:number = 0;
     public static get NUM():number {
         this._NUM = (this._NUM+1)%1000;

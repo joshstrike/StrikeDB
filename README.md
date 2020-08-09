@@ -70,7 +70,7 @@ Creates a server-side prepared statement that will be automatically rebuilt if i
 	Deallocating all the persistent statements on a given connection will free that connection and release it to the pool.
 
  - **executePersistent(handle:string, values?:any):Promise&lt;Query&gt;**
-	Executes a persistent prepared statement by its handle. The returned statement may not be executed. If the internal statement's connection has disappeared, or in fact if any error occurs, the statement will be prepared again and then executed on a new connection.
+	Executes a persistent prepared statement by its handle. If the internal statement's connection has disappeared, or in fact if any error occurs, the statement will be prepared again and then executed on a new connection.
 
  - **deallocatePersistent(handle:string):Promise&lt;void&gt;**
 	 Deallocates the underlying statement and releases its connection if it's the last persistent statement built on that connection.
