@@ -71,7 +71,6 @@ export class BindParser {
     
     public static InlineBindings(sql:string):{newSql:string,bindings:Binding[]} {
         let res:{newSql:string,bindings:Binding[]} = {newSql:'',bindings:this.ParseBindings(sql)};
-        const bindingNames:Set<string> = new Set(res.bindings.map(b => b.name));
 
         let lastIndex:number = 0;
         let replacement:string;
@@ -83,27 +82,5 @@ export class BindParser {
         }
         res.newSql += sql.slice(lastIndex);        
         return (res);
-    }
-    
-    public static ReplaceNamedBindings(values:{[key:string]:string}, sql:string):string {
-        const bindings:Binding[] = this.ParseBindings(sql);
-        const bindingNames:Set<string> = new Set(bindings.map(b => b.name));
-        const unknownBinding:string = Object.keys(values).find((k:string) => !bindingNames.has(k));
-
-        if (unknownBinding) throw new Error(`Couldn't find a binding named '${unknownBinding}'.`);
-
-        let lastIndex:number = 0,
-            newSql = '';
-
-        for (const binding of bindings) {
-            if (binding.name in values) {
-                newSql += sql.slice(lastIndex, binding.start) + values[binding.name];
-                lastIndex = binding.end;
-            }
-        }
-
-        newSql += sql.slice(lastIndex);
-
-        return newSql;
     }
 }
