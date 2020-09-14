@@ -69,8 +69,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             enumerable: true,
             configurable: true
         });
-        //Numbering of prepared statement names. This range should be wide enough to accommodate the max number of normal 
-        //non-persistent statements expected to be allocated at any given time.
+        //numbering of statement names. This range must be wide enough to 
         NameFactory._NUM = 0;
         return NameFactory;
     }());

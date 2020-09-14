@@ -105,7 +105,7 @@ export class Pool {
                 qry = await ps.stm.execute(values).catch((s)=>s);
             } else {
                 //The old ps has not been replaced; no connection could be made.
-                ps.stm.err = {message:'Could not get a connection.'};
+                ps.stm.err = {message:'Could not get a database connection.'};
                 qry = ps.stm;
             }
         }
@@ -122,10 +122,10 @@ export class Pool {
         if (!this._persistentStatements.filter((p)=>p.conn==ps.conn).length) await ps.conn.release();
     }
     public async exec(statementOpts:StatementOpts,connOpts?:ConnOpts):Promise<Query> {
-        let conn:Connection = await this.getConnection(connOpts,1000);
+        let conn:Connection = await this.getConnection(connOpts,1000).catch((e)=>null);
         if (!conn) {
             let q:Query = new Query(conn,statementOpts);
-            q.err = {message:'Could not get a connection'};
+            q.err = {message:'Could not get a database connection'};
             if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors)) return Promise.reject(q);
             return (q);
         }
