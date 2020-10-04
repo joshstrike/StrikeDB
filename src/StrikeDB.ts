@@ -20,10 +20,10 @@ class NameFactory {
 export type InHelper = {sql:string,keyvals:{[key:string]:(string|number)}};
 export class Util {
     /**
-     * Helper for WHERE `id` IN (1,2) statements. Example:
+     * Helper for WHERE `id` IN (1,2) statements. BE SURE TO ESCAPE YOUR VALUES! Example:
      * 
      * let idHelper:InHelper = Util.GetInHelper('id',[1,2]);
-     * let stm:Statement = await conn.prepare(`SELECT * FROM table WHERE id IN (${idHelper.sql})`);
+     * let stm:Statement = await conn.prepare(`SELECT * FROM ::table WHERE field=:field AND id IN (${idHelper.sql})`);
      * await stm.execute(Object.assign({table:'games',field:'homeID'},i.keyvals)); //merge the helper's pairs into the bind object.
      * 
      * @param name a unique name for the set.
