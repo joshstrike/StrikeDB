@@ -4,7 +4,7 @@
 
 *Questions or comments can be directed to josh (at) thestrikeagency.com.*
 
-**What:** StrikeDB is a set of wrappers to promisify node-mysql (mysqljs) functions, intended so you can easily use node-mysql with async / await. It also adds server-side prepared statements, and handy variable binding. **Additionally, it converts all =? or =:param bindings to <=> null-safe, and !=? or !=:param bindings to !(:param<=>val). This is so you can bind null values when executing prepared queries, and they will be treated as NULL. Be aware of this behavior. Only explicitly null bound variables, not false or undefined, are treated this way.**
+**What:** StrikeDB is a set of wrappers to promisify node-mysql (mysqljs) functions, intended so you can easily use node-mysql with async / await. It also adds server-side prepared statements, and handy variable binding.
 
 The goal of this project is to make node-mysql calls a little more like the synchronous PDO model. It also has the advantage of being able to execute the same prepared statement lots of times asynchronously and awaiting all of them, which you can't do in PHP. A future execution might allow you to prepare statements across multiple connections and execute them async round-robin, but that would be down the road.
 
