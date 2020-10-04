@@ -69,7 +69,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             enumerable: true,
             configurable: true
         });
-        //numbering of statement names. This range must be wide enough to 
+        //Numbering of prepared statement names. This range should be wide enough to accommodate the max number of normal 
+        //non-persistent statements expected to be allocated at any given time.
         NameFactory._NUM = 0;
         return NameFactory;
     }());
@@ -226,7 +227,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             return [3 /*break*/, 6];
                         case 5:
                             //The old ps has not been replaced; no connection could be made.
-                            ps.stm.err = { message: 'Could not get a connection.' };
+                            ps.stm.err = { message: 'Could not get a database connection.' };
                             qry = ps.stm;
                             _b.label = 6;
                         case 6:
@@ -273,12 +274,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 var conn, q_1, q;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
-                        case 0: return [4 /*yield*/, this.getConnection(connOpts, 1000)];
+                        case 0: return [4 /*yield*/, this.getConnection(connOpts, 1000).catch(function (e) { return null; })];
                         case 1:
                             conn = _a.sent();
                             if (!conn) {
                                 q_1 = new Query(conn, statementOpts);
-                                q_1.err = { message: 'Could not get a connection' };
+                                q_1.err = { message: 'Could not get a database connection' };
                                 if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors))
                                     return [2 /*return*/, Promise.reject(q_1)];
                                 return [2 /*return*/, (q_1)];
@@ -634,8 +635,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     }
                                 }
                             }
-                            sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g, '$1<$3>$5'); //convert all `field`=? to the null-safe <=>
-                            sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g, '!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
+                            /* if (sql.substr(0,6).toLowerCase() != 'update') {
+                                sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g,'$1<$3>$5'); //convert all `field`=? to the null-safe <=>
+                                sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g,'!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
+                            } */
                             if (_opts.emulate) {
                                 _opts.sql = sql;
                                 s = new Statement(this, _opts);
