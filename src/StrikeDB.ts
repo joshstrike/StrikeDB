@@ -389,8 +389,8 @@ export class Connection {
             return (s);
         }
         //escape single quotes within the query. Necessary because PREPARE x FROM 'query' surrounds the sent query with single quotes.
-        sql = sql.replace(/'/g,`\\'`);
-        let _s:string = `PREPARE stm_${prepID} FROM '${sql}';`
+        //sql = sql.replace(/'/g,`\\'`);
+        let _s:string = `PREPARE stm_${prepID} FROM ${mysql.escape(sql)};`
         if (this.logQueries) console.log(_s);
 
         _opts.sql = _s;

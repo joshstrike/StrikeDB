@@ -392,8 +392,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                     s.keys = keys;
                     return (s);
                 }
-                sql = sql.replace(/'/g, `\\'`);
-                let _s = `PREPARE stm_${prepID} FROM '${sql}';`;
+                let _s = `PREPARE stm_${prepID} FROM ${mysql.escape(sql)};`;
                 if (this.logQueries)
                     console.log(_s);
                 _opts.sql = _s;
