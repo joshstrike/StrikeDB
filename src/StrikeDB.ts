@@ -20,10 +20,13 @@ class NameFactory {
 export type InHelper = {sql:string,keyvals:{[key:string]:(string|number)}};
 export class Util {
     /**
-     * Helper for WHERE `id` IN (1,2) statements. BE SURE TO ESCAPE YOUR VALUES! Example:
+     * Helper for WHERE `id` IN (1,2) statements. Example:
      * 
      * let idHelper:InHelper = Util.GetInHelper('id',[1,2]);
-     * let stm:Statement = await conn.prepare(`SELECT * FROM ::table WHERE field=:field AND id IN (${idHelper.sql})`);
+     * let stm:Statement = await conn.prepare(`SELECT * FROM ::table WHERE ::field IN (${idHelper.sql})`,{emulate:true});
+     * 
+     * The above prepares the emulated statement: SELECT * FROM ?? WHERE ?? in (?,?);
+     * 
      * await stm.execute(Object.assign({table:'games',field:'homeID'},i.keyvals)); //merge the helper's pairs into the bind object.
      * 
      * @param name a unique name for the set.
@@ -53,7 +56,7 @@ export class Pool {
         this._pool = mysql.createPool(config);
     }
     private _optsToDefault(o?:ConnOpts):ConnOpts {
-        if (!o) o = this._connOpts;
+        if (!o) return (this._connOpts);
         for (let k in this._connOpts) {
             if (o[k]===undefined) o[k]=this._connOpts[k];
         }
@@ -256,9 +259,9 @@ export class Statement extends Query {
         let p:Promise<Query>[] = [];
         let unsetters:string[] = [];
         for (let k:number=0;k < values.length;k++) {
-            let _val:string = values[k]===null ? 'NULL' : `'${values[k]}'`;
+            let _val:string = values[k]===null ? null : values[k];
             let _key:string = `@${this.prepID}_${k}_${this.useID}`;
-            let _s:string = `SET ${_key}=${_val};`;
+            let _s:string = `SET ${_key}=${mysql.escape(_val)};`;
             unsetters.push(_key);
             if (this._dbc.logQueries) console.log(_s);
             p.push(this._dbc._act('query',{sql:_s},true,true)); //SET @a_${useID}=1
