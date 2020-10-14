@@ -86,8 +86,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             return __awaiter(this, void 0, void 0, function* () {
                 let _okStatement = this._persistentStatements.find((p) => p.conn.conn && !p.conn.err);
                 let conn = _okStatement ? _okStatement.conn : yield this.getConnection();
-                if (!conn || conn.err)
+                if (!conn || conn.err) {
+                    if (this._connOpts.logQueries)
+                        console.log(conn);
+                    let q = new Query(conn, opts);
+                    q.err = { message: 'Could not get a database connection' };
+                    if (this._connOpts.rejectErrors)
+                        return Promise.reject(q);
                     return (false);
+                }
                 let existing = this._getPSByHandle(handle);
                 if (existing)
                     this._persistentStatements.splice(this._persistentStatements.indexOf(existing), 1);
@@ -141,7 +148,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         exec(statementOpts, connOpts) {
             return __awaiter(this, void 0, void 0, function* () {
                 let conn = yield this.getConnection(connOpts, 1000).catch((e) => null);
-                if (!conn) {
+                if (!conn || conn.err) {
                     let q = new Query(conn, statementOpts);
                     q.err = { message: 'Could not get a database connection' };
                     if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors))

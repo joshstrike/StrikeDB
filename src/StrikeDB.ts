@@ -83,7 +83,13 @@ export class Pool {
     public async preparePersistent(handle:string,opts:StatementOpts):Promise<boolean> {
         let _okStatement:PersistentStatement = this._persistentStatements.find((p)=>p.conn.conn && !p.conn.err);
         let conn:Connection = _okStatement ? _okStatement.conn : await this.getConnection();
-        if (!conn || conn.err) return (false);
+        if (!conn || conn.err) {
+            if (this._connOpts.logQueries) console.log(conn);
+            let q:Query = new Query(conn,opts);
+            q.err = {message:'Could not get a database connection'};
+            if (this._connOpts.rejectErrors) return Promise.reject(q);
+            return (false);
+        }
         
         let existing:PersistentStatement = this._getPSByHandle(handle);
         if (existing) this._persistentStatements.splice(this._persistentStatements.indexOf(existing),1);
@@ -126,9 +132,10 @@ export class Pool {
     }
     public async exec(statementOpts:StatementOpts,connOpts?:ConnOpts):Promise<Query> {
         let conn:Connection = await this.getConnection(connOpts,1000).catch((e)=>null);
-        if (!conn) {
+        if (!conn || conn.err) {
             let q:Query = new Query(conn,statementOpts);
             q.err = {message:'Could not get a database connection'};
+            //look at connOpts passed in, if not default to the setting for the pool.
             if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors)) return Promise.reject(q);
             return (q);
         }
