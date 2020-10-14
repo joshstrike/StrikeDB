@@ -446,4 +446,12 @@ export class Connection {
         if (this.conn) await this.conn.release();
         this.conn = null;
     }
+    public async end():Promise<void> {
+        if (this.conn) await this.conn.end();
+        this.conn = null;
+    }
+    public async destroy():Promise<void> {
+        if (this.conn) await this.conn.destroy();
+        this.conn = null;
+    }
 }
