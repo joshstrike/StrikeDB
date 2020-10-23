@@ -207,39 +207,35 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         };
         Pool.prototype.executePersistent = function (handle, values) {
             return __awaiter(this, void 0, void 0, function () {
-                var ps, qry, _i, _a, f, ok;
-                return __generator(this, function (_b) {
-                    switch (_b.label) {
+                var ps, qry, ok;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
                         case 0:
                             ps = this._getPSByHandle(handle);
                             if (!ps)
                                 throw new Error("Cannot execute statement '" + handle + "' - statement was not found.");
                             return [4 /*yield*/, ps.stm.execute(values).catch(function (s) { return s; })];
                         case 1:
-                            qry = _b.sent();
+                            qry = _a.sent();
                             if (!ps.conn.err) return [3 /*break*/, 6];
                             return [4 /*yield*/, ps.conn.release()];
                         case 2:
-                            _b.sent();
-                            for (_i = 0, _a = this._persistentStatements; _i < _a.length; _i++) {
-                                f = _a[_i];
-                                console.log(f.handle, f.conn.conn ? f.conn.conn.threadId : 'none');
-                            }
+                            _a.sent();
                             return [4 /*yield*/, this.preparePersistent(handle, ps.origOpts)];
                         case 3:
-                            ok = _b.sent();
+                            ok = _a.sent();
                             if (!ok) return [3 /*break*/, 5];
                             //The old ps has been replaced on a successful connection. Reference the new one for execution and return.
                             ps = this._getPSByHandle(handle);
                             return [4 /*yield*/, ps.stm.execute(values).catch(function (s) { return s; })];
                         case 4:
-                            qry = _b.sent();
+                            qry = _a.sent();
                             return [3 /*break*/, 6];
                         case 5:
                             //The old ps has not been replaced; no connection could be made.
                             ps.stm.err = { message: 'Could not get a database connection.' };
                             qry = ps.stm;
-                            _b.label = 6;
+                            _a.label = 6;
                         case 6:
                             if (qry.err && this._connOpts.rejectErrors)
                                 return [2 /*return*/, Promise.reject(qry)];

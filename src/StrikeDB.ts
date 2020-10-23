@@ -106,7 +106,7 @@ export class Pool {
         let qry:Query = await ps.stm.execute(values).catch((s)=>s);
         if (ps.conn.err) {
             await ps.conn.release();
-            for (let f of this._persistentStatements) { console.log(f.handle,f.conn.conn ? f.conn.conn.threadId : 'none')}
+            //for (let f of this._persistentStatements) { console.log(f.handle,f.conn.conn ? f.conn.conn.threadId : 'none') }
             let ok:boolean = await this.preparePersistent(handle, ps.origOpts);
             if (ok) {
                 //The old ps has been replaced on a successful connection. Reference the new one for execution and return.
