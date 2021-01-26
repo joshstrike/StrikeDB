@@ -41,13 +41,17 @@ export class Util {
         }
         return {sql:sql, keyvals:keyvals};
     }
+    public static CatchRejectedQuery(q:Query):Query {
+        console.log(q.err);
+        return (q);
+    }
 }
 
-export type ConnOpts = {rejectErrors?:boolean,logQueries?:boolean,sessionTimezone?:string|boolean};
+export type ConnOpts = {rejectErrors?:boolean,logQueries?:boolean,timezone?:string|boolean};
 export type PersistentStatement = {handle:string,conn:Connection,stm:Statement,origOpts:StatementOpts};
 export class Pool {
     public _pool:mysql.Pool;
-    private _connOpts:ConnOpts = {rejectErrors:true,logQueries:true,sessionTimezone:false};
+    private _connOpts:ConnOpts = {rejectErrors:true,logQueries:true,timezone:false};
     private _persistentStatements:PersistentStatement[] = [];
     public constructor(config:mysql.PoolConfig,opts?:ConnOpts) {
         if (opts) {
@@ -65,13 +69,33 @@ export class Pool {
     public async getConnection(connOpts?:ConnOpts,enqueueTimeout:number = 10000):Promise<Connection> {
         let _connOpts:ConnOpts = this._optsToDefault(connOpts);
         let connPromise:()=>Promise<mysql.PoolConnection> = util.promisify(this._pool.getConnection).bind(this._pool);
+        let _timeout:boolean = false;
         let dbc:Connection = await new Promise<Connection>(async (resolve,reject)=>{
-            if (enqueueTimeout > 0) setTimeout(()=>{ if (!dbc) reject(); }, enqueueTimeout);
-            let dbc:Connection = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(_connOpts,c,null);})
+            let _dbc:Connection;
+            if (enqueueTimeout > 0) {
+                setTimeout(()=>{ 
+                    if (!_dbc) { 
+                        console.log('enqueueTimeout failed. NOT Rejecting.'); 
+                        _timeout = true;
+                        //Rejecting here causes the connections to pile up and never return or release.
+                        //So enqueueTimeout does not guarantee the connection will be released within the given time, only that an error will be 
+                        //returned and the connection will not succeed when it finally gets to the front of the queue.
+                        //reject('enqueueTimeout failed. Rejecting.');
+                    }
+                }, enqueueTimeout);
+            }
+            _dbc = await connPromise().then((c:mysql.PoolConnection)=>{return new Connection(_connOpts,c,null);})
                                             .catch((e:mysql.MysqlError)=>{return new Connection(_connOpts,null,e);});
-            resolve(dbc);
-        }).catch(()=>null);
-        if (_connOpts.sessionTimezone) await dbc._query({sql:`SET SESSION time_zone='${_connOpts.sessionTimezone}';`});
+            if (_timeout) {
+                _dbc.release();
+                _dbc.err = {message:'Connection was cancelled due to enqueueTimeout.'}; //inject our own error 
+            }
+            resolve(_dbc);
+        }).catch((err)=>{
+            console.log('Connection to server failed:',err);
+            return (null);
+        });
+        if (_connOpts.timezone) await dbc._query({sql:`SET SESSION time_zone='${_connOpts.timezone}';`});
         return (dbc);
     }
     private _getPSByHandle(handle:string):PersistentStatement {
@@ -297,6 +321,7 @@ export class Connection {
     public get logQueries():boolean {
         return (this.opts.logQueries);
     }
+
     /**
      * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Query.
      * The statement is never prepared or executed, it is just assembled here from the options and the call's result.

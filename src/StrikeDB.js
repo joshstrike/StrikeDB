@@ -99,12 +99,16 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             }
             return { sql: sql, keyvals: keyvals };
         };
+        Util.CatchRejectedQuery = function (q) {
+            console.log(q.err);
+            return (q);
+        };
         return Util;
     }());
     exports.Util = Util;
     var Pool = (function () {
         function Pool(config, opts) {
-            this._connOpts = { rejectErrors: true, logQueries: true, sessionTimezone: false };
+            this._connOpts = { rejectErrors: true, logQueries: true, timezone: false };
             this._persistentStatements = [];
             if (opts) {
                 for (var k in opts)
@@ -125,33 +129,50 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             if (enqueueTimeout === void 0) { enqueueTimeout = 10000; }
             return __awaiter(this, void 0, void 0, function () {
                 var _this = this;
-                var _connOpts, connPromise, dbc;
+                var _connOpts, connPromise, _timeout, dbc;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
                             _connOpts = this._optsToDefault(connOpts);
                             connPromise = util.promisify(this._pool.getConnection).bind(this._pool);
+                            _timeout = false;
                             return [4 /*yield*/, new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
-                                    var dbc;
+                                    var _dbc;
                                     return __generator(this, function (_a) {
                                         switch (_a.label) {
                                             case 0:
-                                                if (enqueueTimeout > 0)
-                                                    setTimeout(function () { if (!dbc)
-                                                        reject(); }, enqueueTimeout);
+                                                if (enqueueTimeout > 0) {
+                                                    setTimeout(function () {
+                                                        if (!_dbc) {
+                                                            console.log('enqueueTimeout failed. NOT Rejecting.');
+                                                            _timeout = true;
+                                                            //Rejecting here causes the connections to pile up and never return or release.
+                                                            //So enqueueTimeout does not guarantee the connection will be released within the given time, only that an error will be 
+                                                            //returned and the connection will not succeed when it finally gets to the front of the queue.
+                                                            //reject('enqueueTimeout failed. Rejecting.');
+                                                        }
+                                                    }, enqueueTimeout);
+                                                }
                                                 return [4 /*yield*/, connPromise().then(function (c) { return new Connection(_connOpts, c, null); })
                                                         .catch(function (e) { return new Connection(_connOpts, null, e); })];
                                             case 1:
-                                                dbc = _a.sent();
-                                                resolve(dbc);
+                                                _dbc = _a.sent();
+                                                if (_timeout) {
+                                                    _dbc.release();
+                                                    _dbc.err = { message: 'Connection was cancelled due to enqueueTimeout.' }; //inject our own error 
+                                                }
+                                                resolve(_dbc);
                                                 return [2 /*return*/];
                                         }
                                     });
-                                }); }).catch(function () { return null; })];
+                                }); }).catch(function (err) {
+                                    console.log('Connection to server failed:', err);
+                                    return (null);
+                                })];
                         case 1:
                             dbc = _a.sent();
-                            if (!_connOpts.sessionTimezone) return [3 /*break*/, 3];
-                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + _connOpts.sessionTimezone + "';" })];
+                            if (!_connOpts.timezone) return [3 /*break*/, 3];
+                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + _connOpts.timezone + "';" })];
                         case 2:
                             _a.sent();
                             _a.label = 3;
