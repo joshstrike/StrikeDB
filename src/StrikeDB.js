@@ -1,18 +1,24 @@
 var __extends = (this && this.__extends) || (function () {
-    var extendStatics = Object.setPrototypeOf ||
-        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    var extendStatics = function (d, b) {
+        extendStatics = Object.setPrototypeOf ||
+            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
+        return extendStatics(d, b);
+    };
     return function (d, b) {
+        if (typeof b !== "function" && b !== null)
+            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
         extendStatics(d, b);
         function __() { this.constructor = d; }
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
         function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
@@ -23,8 +29,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     function step(op) {
         if (f) throw new TypeError("Generator is already executing.");
         while (_) try {
-            if (f = 1, y && (t = y[op[0] & 2 ? "return" : op[0] ? "throw" : "next"]) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [0, t.value];
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
             switch (op[0]) {
                 case 0: case 1: t = op; break;
                 case 4: _.label++; return { value: op[1], done: false };
@@ -54,11 +60,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 })(function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.Connection = exports.Statement = exports.Query = exports.Pool = exports.Util = void 0;
     var mysql = require("mysql");
     var util = require("util");
     var uuid_1 = require("uuid");
     var BindParser_1 = require("./BindParser");
-    var NameFactory = (function () {
+    var NameFactory = /** @class */ (function () {
         function NameFactory() {
         }
         Object.defineProperty(NameFactory, "NUM", {
@@ -66,7 +73,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                 this._NUM = (this._NUM + 1) % 1000;
                 return (this._NUM);
             },
-            enumerable: true,
+            enumerable: false,
             configurable: true
         });
         //Numbering of prepared statement names. This range should be wide enough to accommodate the max number of normal 
@@ -74,7 +81,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         NameFactory._NUM = 0;
         return NameFactory;
     }());
-    var Util = (function () {
+    var Util = /** @class */ (function () {
         function Util() {
         }
         /**
@@ -85,7 +92,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
          *
          * The above prepares the emulated statement: SELECT * FROM ?? WHERE ?? in (?,?);
          *
-         * await stm.execute(Object.assign({table:'games',field:'homeID'},i.keyvals)); //merge the helper's pairs into the bind object.
+         * await stm.execute(Object.assign({table:'games',field:'homeID'},idHelper.keyvals)); //merge the helper's pairs into the bind object.
          *
          * @param name a unique name for the set.
          * @param vals
@@ -94,19 +101,19 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             var sql = "";
             var keyvals = {};
             for (var k = 0; k < vals.length; k++) {
-                sql += (k > 0 ? "," : "") + (":" + name + k);
-                keyvals["" + name + k] = vals[k];
+                sql += (k > 0 ? "," : "") + ":".concat(name).concat(k);
+                keyvals["".concat(name).concat(k)] = vals[k];
             }
             return { sql: sql, keyvals: keyvals };
         };
         Util.CatchRejectedQuery = function (q) {
-            console.log(q.err);
+            console.log('CAUGHT REJECTED QUERY:\n', q.err);
             return (q);
         };
         return Util;
     }());
     exports.Util = Util;
-    var Pool = (function () {
+    var Pool = /** @class */ (function () {
         function Pool(config, opts) {
             this._connOpts = { rejectErrors: true, logQueries: true, timezone: false };
             this._persistentStatements = [];
@@ -128,8 +135,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         Pool.prototype.getConnection = function (connOpts, enqueueTimeout) {
             if (enqueueTimeout === void 0) { enqueueTimeout = 10000; }
             return __awaiter(this, void 0, void 0, function () {
-                var _this = this;
                 var _connOpts, connPromise, _timeout, dbc;
+                var _this = this;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -161,7 +168,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                                     _dbc.release();
                                                     _dbc.err = { message: 'Connection was cancelled due to enqueueTimeout.' }; //inject our own error 
                                                 }
-                                                resolve(_dbc);
+                                                if (!_dbc)
+                                                    reject();
+                                                else
+                                                    resolve(_dbc);
                                                 return [2 /*return*/];
                                         }
                                     });
@@ -172,7 +182,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 1:
                             dbc = _a.sent();
                             if (!_connOpts.timezone) return [3 /*break*/, 3];
-                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='" + _connOpts.timezone + "';" })];
+                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='".concat(_connOpts.timezone, "';") })];
                         case 2:
                             _a.sent();
                             _a.label = 3;
@@ -234,7 +244,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 0:
                             ps = this._getPSByHandle(handle);
                             if (!ps)
-                                throw new Error("Cannot execute statement '" + handle + "' - statement was not found.");
+                                throw new Error("Cannot execute statement '".concat(handle, "' - statement was not found."));
                             return [4 /*yield*/, ps.stm.execute(values).catch(function (s) { return s; })];
                         case 1:
                             qry = _a.sent();
@@ -326,7 +336,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         return Pool;
     }());
     exports.Pool = Pool;
-    var Query = (function () {
+    var Query = /** @class */ (function () {
         function Query(_dbc, _opts) {
             this._dbc = _dbc;
             this._opts = _opts;
@@ -334,7 +344,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         return Query;
     }());
     exports.Query = Query;
-    var Statement = (function (_super) {
+    var Statement = /** @class */ (function (_super) {
         __extends(Statement, _super);
         function Statement(_dbc, _execOpts) {
             var _this = _super.call(this, _dbc, _execOpts) || this;
@@ -347,8 +357,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         }
         Statement.prototype.execute = function (values) {
             return __awaiter(this, void 0, void 0, function () {
-                var _this = this;
                 var timeout, nestTables, typeCast, v, bindError, vars, varstr, _s, qry, p, _i, vars_1, u, s;
+                var _this = this;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -364,8 +374,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             else if (values) {
                                 v = this.keys.reduce(function (r, k) {
                                     //kinda like !isset()
-                                    if (values[k.name] === undefined) {
-                                        _this.err = { message: "EXECUTION ERROR: Bound variable `" + k.name + "` is undefined" };
+                                    if (values[k.name] === undefined) { //don't throw if it's specified but intentionally null. The one time I've been glad there's a difference!
+                                        _this.err = { message: "EXECUTION ERROR: Bound variable `".concat(k.name, "` is undefined") };
                                     }
                                     r.push(values[k.name]);
                                     return (r);
@@ -389,7 +399,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             return [4 /*yield*/, this._use(v)];
                         case 1:
                             vars = _a.sent();
-                            if (this._dbc.err) {
+                            if (this._dbc.err) { //_dbc.err will be set by _use if there's an internal problem with any SET.
                                 this.err = this._dbc.err;
                                 if (this._dbc.rejectErrors)
                                     return [2 /*return*/, Promise.reject(this)]; //exec error in this part returns the initial setup statement. Error is on the connection.
@@ -398,7 +408,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             varstr = '';
                             if (vars.length)
                                 varstr = "USING " + vars.join(',');
-                            _s = "EXECUTE stm_" + this.prepID + " " + varstr + ";";
+                            _s = "EXECUTE stm_".concat(this.prepID, " ").concat(varstr, ";");
                             if (this._dbc.logQueries)
                                 console.log(_s);
                             return [4 /*yield*/, this._dbc._query({ sql: _s, timeout: timeout, nestTables: nestTables, typeCast: typeCast }).catch(function (e) { return (e); })];
@@ -411,7 +421,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             p = [];
                             for (_i = 0, vars_1 = vars; _i < vars_1.length; _i++) {
                                 u = vars_1[_i];
-                                p.push(this._dbc._act('query', { sql: "SET " + u + "=NULL;" }));
+                                p.push(this._dbc._act('query', { sql: "SET ".concat(u, "=NULL;") }));
                             }
                             return [4 /*yield*/, Promise.all(p).catch(function (e) {
                                     _this._dbc.err = e.err;
@@ -470,8 +480,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
          */
         Statement.prototype._use = function (values) {
             return __awaiter(this, void 0, void 0, function () {
-                var _this = this;
                 var vars, p, unsetters, k, _val, _key, _s;
+                var _this = this;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -485,13 +495,13 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             unsetters = [];
                             for (k = 0; k < values.length; k++) {
                                 _val = values[k] === null ? null : values[k];
-                                _key = "@" + this.prepID + "_" + k + "_" + this.useID;
-                                _s = "SET " + _key + "=" + mysql.escape(_val) + ";";
+                                _key = "@".concat(this.prepID, "_").concat(k, "_").concat(this.useID);
+                                _s = "SET ".concat(_key, "=").concat(mysql.escape(_val), ";");
                                 unsetters.push(_key);
                                 if (this._dbc.logQueries)
                                     console.log(_s);
                                 p.push(this._dbc._act('query', { sql: _s }, true, true)); //SET @a_${useID}=1
-                                vars.push("@" + this.prepID + "_" + k + "_" + this.useID); //USING @a, @b... returned to the execution statement.
+                                vars.push("@".concat(this.prepID, "_").concat(k, "_").concat(this.useID)); //USING @a, @b... returned to the execution statement.
                             }
                             //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
                             return [4 /*yield*/, Promise.all(p).catch(function (e) { _this._dbc.err = e.err; })];
@@ -512,7 +522,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                             //Deallocation is crucial when using pooled connections.
                             if (this._execOpts.emulate)
                                 return [2 /*return*/, (this)];
-                            return [4 /*yield*/, this._dbc._act('query', { sql: "DEALLOCATE PREPARE stm_" + this.prepID }, false, true).catch(function (e) { return _this._dbc.release(); })];
+                            return [4 /*yield*/, this._dbc._act('query', { sql: "DEALLOCATE PREPARE stm_".concat(this.prepID) }, false, true).catch(function (e) { return _this._dbc.release(); })];
                         case 1:
                             _a.sent();
                             return [2 /*return*/, (this)];
@@ -523,7 +533,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         return Statement;
     }(Query));
     exports.Statement = Statement;
-    var Connection = (function () {
+    var Connection = /** @class */ (function () {
         function Connection(opts, conn, err) {
             this.opts = opts;
             this.conn = conn;
@@ -533,14 +543,14 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             get: function () {
                 return (this.opts.rejectErrors);
             },
-            enumerable: true,
+            enumerable: false,
             configurable: true
         });
         Object.defineProperty(Connection.prototype, "logQueries", {
             get: function () {
                 return (this.opts.logQueries);
             },
-            enumerable: true,
+            enumerable: false,
             configurable: true
         });
         /**
@@ -554,8 +564,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         Connection.prototype._act = function (func, opts, overwriteResult, forceRejectErrors) {
             if (overwriteResult === void 0) { overwriteResult = true; }
             return __awaiter(this, void 0, void 0, function () {
-                var _this = this;
                 var qry, q;
+                var _this = this;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -570,7 +580,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 _this.conn[func].bind(_this.conn)(opts, function (err, result, fields) {
                                     if (err) {
                                         qry.err = err;
-                                        return resolve();
+                                        return resolve(null);
                                     }
                                     if (overwriteResult) {
                                         _this._lastResult = result;
@@ -578,7 +588,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     }
                                     qry.result = result;
                                     qry.fields = fields;
-                                    return resolve();
+                                    return resolve(null);
                                 });
                             });
                             return [4 /*yield*/, q];
@@ -597,8 +607,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         };
         Connection.prototype.changeUser = function (opts) {
             return __awaiter(this, void 0, void 0, function () {
-                var _this = this;
                 var c;
+                var _this = this;
                 return __generator(this, function (_a) {
                     switch (_a.label) {
                         case 0:
@@ -642,7 +652,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                         case 0:
                             _opts = Object.assign({}, opts);
                             _opts.values = null;
-                            prepID = _opts.uuid ? uuid_1.v4().replace(/-/g, '') : NameFactory.NUM;
+                            prepID = _opts.uuid ? (0, uuid_1.v4)().replace(/-/g, '') : NameFactory.NUM;
                             sql = _opts.sql;
                             bindingRes = BindParser_1.BindParser.InlineBindings(sql);
                             if (bindingRes.bindings.length) {
@@ -652,7 +662,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                     for (_i = 0, _a = bindingRes.bindings; _i < _a.length; _i++) {
                                         b = _a[_i];
                                         if (b.field)
-                                            this.err = { message: "ERROR PREPARING STATEMENT. Could not bind ::" + b.name + ". Table and field bindings can only be used under emulation." };
+                                            this.err = { message: "ERROR PREPARING STATEMENT. Could not bind ::".concat(b.name, ". Table and field bindings can only be used under emulation.") };
                                     }
                                     if (this.err) {
                                         stm_1 = new Statement(this, _opts);
@@ -675,7 +685,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
                                 s.keys = keys;
                                 return [2 /*return*/, (s)];
                             }
-                            _s = "PREPARE stm_" + prepID + " FROM " + mysql.escape(sql) + ";";
+                            _s = "PREPARE stm_".concat(prepID, " FROM ").concat(mysql.escape(sql), ";");
                             if (this.logQueries)
                                 console.log(_s);
                             _opts.sql = _s;
@@ -768,7 +778,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             get: function () {
                 return (this._lastResult ? this._lastResult.insertId : null);
             },
-            enumerable: true,
+            enumerable: false,
             configurable: true
         });
         Connection.prototype.release = function () {

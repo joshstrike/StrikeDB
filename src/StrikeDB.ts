@@ -3,7 +3,10 @@ import * as util from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import { BindParser, Binding } from './BindParser';
 
-//leave this pretty loosely typed, generally we're expecting either an OKPacket or a rowset.
+/* Result is left pretty loosely typed. Generally we're expecting either an OKPacket or a row set.
+ * A normal SELECT result returns an array like [RowPacket:{}, ...] without an OKPacket. The Result of a normal INSERT/UPDATE is just the OKPacket.
+ * Calling a stored procedure is an edge case. It returns nested arrays like: {result:[[RowPacket:{}...]],fields:[[FieldPacket:{}...]],OKPacket}. 
+ * StrikeDB does not attempt to normalize this into a mixed object, so you need to drill one level into the result for stored procedures. */
 export type Result = mysql.OkPacket&any[];
 export type Rejection = {err:mysql.MysqlError|{message:string}};
 
@@ -27,7 +30,7 @@ export class Util {
      * 
      * The above prepares the emulated statement: SELECT * FROM ?? WHERE ?? in (?,?);
      * 
-     * await stm.execute(Object.assign({table:'games',field:'homeID'},i.keyvals)); //merge the helper's pairs into the bind object.
+     * await stm.execute(Object.assign({table:'games',field:'homeID'},idHelper.keyvals)); //merge the helper's pairs into the bind object.
      * 
      * @param name a unique name for the set.
      * @param vals
@@ -42,7 +45,7 @@ export class Util {
         return {sql:sql, keyvals:keyvals};
     }
     public static CatchRejectedQuery(q:Query):Query {
-        console.log(q.err);
+        console.log('CAUGHT REJECTED QUERY:\n',q.err);
         return (q);
     }
 }
@@ -90,7 +93,8 @@ export class Pool {
                 _dbc.release();
                 _dbc.err = {message:'Connection was cancelled due to enqueueTimeout.'}; //inject our own error 
             }
-            resolve(_dbc);
+            if (!_dbc) reject();
+            	else resolve(_dbc);
         }).catch((err)=>{
             console.log('Connection to server failed:',err);
             return (null);
@@ -344,7 +348,7 @@ export class Connection {
             this.conn[func].bind(this.conn)(opts,(err:mysql.MysqlError,result:any,fields:mysql.FieldInfo[])=>{
                 if (err) {
                     qry.err = err;
-                    return resolve();
+                    return resolve(null);
                 }
                 if (overwriteResult) {
                     this._lastResult = result;
@@ -352,7 +356,7 @@ export class Connection {
                 }
                 qry.result = result;
                 qry.fields = fields;
-                return resolve();
+                return resolve(null);
             });
         });
         await q;

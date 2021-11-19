@@ -10,7 +10,8 @@
 })(function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    var BindParser = (function () {
+    exports.BindParser = void 0;
+    var BindParser = /** @class */ (function () {
         function BindParser() {
         }
         BindParser.ParseBindings = function (sql) {
@@ -45,7 +46,7 @@
                     }
                     consume();
                 }
-                throw new Error("Underterminated string literal starting at index " + start + ".");
+                throw new Error("Underterminated string literal starting at index ".concat(start, "."));
             }
             function parseBinding() {
                 var start = i;
@@ -59,7 +60,7 @@
                     consume();
                 var name = sql.slice(start + (field ? 2 : 1), i);
                 if (!name.length) {
-                    throw new Error("Invalid binding starting at index " + start + ".");
+                    throw new Error("Invalid binding starting at index ".concat(start, "."));
                 }
                 bindings.push({
                     start: start,
