@@ -1,54 +1,3 @@
-var __extends = (this && this.__extends) || (function () {
-    var extendStatics = function (d, b) {
-        extendStatics = Object.setPrototypeOf ||
-            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
-        return extendStatics(d, b);
-    };
-    return function (d, b) {
-        if (typeof b !== "function" && b !== null)
-            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
-        extendStatics(d, b);
-        function __() { this.constructor = d; }
-        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-    };
-})();
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __generator = (this && this.__generator) || function (thisArg, body) {
-    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
-    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
-    function verb(n) { return function (v) { return step([n, v]); }; }
-    function step(op) {
-        if (f) throw new TypeError("Generator is already executing.");
-        while (_) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [op[0] & 2, t.value];
-            switch (op[0]) {
-                case 0: case 1: t = op; break;
-                case 4: _.label++; return { value: op[1], done: false };
-                case 5: _.label++; y = op[1]; op = [0]; continue;
-                case 7: op = _.ops.pop(); _.trys.pop(); continue;
-                default:
-                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
-                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
-                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
-                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
-                    if (t[2]) _.ops.pop();
-                    _.trys.pop(); continue;
-            }
-            op = body.call(thisArg, _);
-        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
-        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
-    }
-};
 (function (factory) {
     if (typeof module === "object" && typeof module.exports === "object") {
         var v = factory(require, exports);
@@ -61,29 +10,20 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Connection = exports.Statement = exports.Query = exports.Pool = exports.Util = void 0;
-    var mysql = require("mysql");
-    var util = require("util");
-    var uuid_1 = require("uuid");
-    var BindParser_1 = require("./BindParser");
-    var NameFactory = /** @class */ (function () {
-        function NameFactory() {
-        }
-        Object.defineProperty(NameFactory, "NUM", {
-            get: function () {
-                this._NUM = (this._NUM + 1) % 1000;
-                return (this._NUM);
-            },
-            enumerable: false,
-            configurable: true
-        });
+    const mysql = require("mysql");
+    const util = require("util");
+    const uuid_1 = require("uuid");
+    const BindParser_1 = require("./BindParser");
+    class NameFactory {
         //Numbering of prepared statement names. This range should be wide enough to accommodate the max number of normal 
         //non-persistent statements expected to be allocated at any given time.
-        NameFactory._NUM = 0;
-        return NameFactory;
-    }());
-    var Util = /** @class */ (function () {
-        function Util() {
+        static _NUM = 0;
+        static get NUM() {
+            this._NUM = (this._NUM + 1) % 1000;
+            return (this._NUM);
         }
+    }
+    class Util {
         /**
          * Helper for WHERE `id` IN (1,2) statements. Example:
          *
@@ -97,462 +37,327 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
          * @param name a unique name for the set.
          * @param vals
          */
-        Util.GetInHelper = function (name, vals) {
-            var sql = "";
-            var keyvals = {};
-            for (var k = 0; k < vals.length; k++) {
-                sql += (k > 0 ? "," : "") + ":".concat(name).concat(k);
-                keyvals["".concat(name).concat(k)] = vals[k];
+        static GetInHelper(name, vals) {
+            let sql = "";
+            let keyvals = {};
+            for (let k = 0; k < vals.length; k++) {
+                sql += (k > 0 ? `,` : ``) + `:${name}${k}`;
+                keyvals[`${name}${k}`] = vals[k];
             }
             return { sql: sql, keyvals: keyvals };
-        };
-        Util.CatchRejectedQuery = function (q) {
+        }
+        static CatchRejectedQuery(q) {
             console.log('CAUGHT REJECTED QUERY:\n', q.err);
             return (q);
-        };
-        return Util;
-    }());
+        }
+    }
     exports.Util = Util;
-    var Pool = /** @class */ (function () {
-        function Pool(config, opts) {
-            this._connOpts = { rejectErrors: true, logQueries: true, timezone: false };
-            this._persistentStatements = [];
+    class Pool {
+        _pool;
+        _connOpts = { rejectErrors: true, logQueries: true, timezone: false };
+        _persistentStatements = [];
+        constructor(config, opts) {
             if (opts) {
-                for (var k in opts)
+                for (let k in opts)
                     this._connOpts[k] = opts[k];
             }
             this._pool = mysql.createPool(config);
         }
-        Pool.prototype._optsToDefault = function (o) {
+        _optsToDefault(o) {
             if (!o)
                 return (this._connOpts);
-            for (var k in this._connOpts) {
+            for (let k in this._connOpts) {
                 if (o[k] === undefined)
                     o[k] = this._connOpts[k];
             }
             return (o);
-        };
-        Pool.prototype.getConnection = function (connOpts, enqueueTimeout) {
-            if (enqueueTimeout === void 0) { enqueueTimeout = 10000; }
-            return __awaiter(this, void 0, void 0, function () {
-                var _connOpts, connPromise, _timeout, dbc;
-                var _this = this;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            _connOpts = this._optsToDefault(connOpts);
-                            connPromise = util.promisify(this._pool.getConnection).bind(this._pool);
-                            _timeout = false;
-                            return [4 /*yield*/, new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
-                                    var _dbc;
-                                    return __generator(this, function (_a) {
-                                        switch (_a.label) {
-                                            case 0:
-                                                if (enqueueTimeout > 0) {
-                                                    setTimeout(function () {
-                                                        if (!_dbc) {
-                                                            console.log('enqueueTimeout failed. NOT Rejecting.');
-                                                            _timeout = true;
-                                                            //Rejecting here causes the connections to pile up and never return or release.
-                                                            //So enqueueTimeout does not guarantee the connection will be released within the given time, only that an error will be 
-                                                            //returned and the connection will not succeed when it finally gets to the front of the queue.
-                                                            //reject('enqueueTimeout failed. Rejecting.');
-                                                        }
-                                                    }, enqueueTimeout);
-                                                }
-                                                return [4 /*yield*/, connPromise().then(function (c) { return new Connection(_connOpts, c, null); })
-                                                        .catch(function (e) { return new Connection(_connOpts, null, e); })];
-                                            case 1:
-                                                _dbc = _a.sent();
-                                                if (_timeout) {
-                                                    _dbc.release();
-                                                    _dbc.err = { message: 'Connection was cancelled due to enqueueTimeout.' }; //inject our own error 
-                                                }
-                                                if (!_dbc)
-                                                    reject();
-                                                else
-                                                    resolve(_dbc);
-                                                return [2 /*return*/];
-                                        }
-                                    });
-                                }); }).catch(function (err) {
-                                    console.log('Connection to server failed:', err);
-                                    return (null);
-                                })];
-                        case 1:
-                            dbc = _a.sent();
-                            if (!_connOpts.timezone) return [3 /*break*/, 3];
-                            return [4 /*yield*/, dbc._query({ sql: "SET SESSION time_zone='".concat(_connOpts.timezone, "';") })];
-                        case 2:
-                            _a.sent();
-                            _a.label = 3;
-                        case 3: return [2 /*return*/, (dbc)];
-                    }
-                });
+        }
+        async getConnection(connOpts, enqueueTimeout = 10000) {
+            let _connOpts = this._optsToDefault(connOpts);
+            let connPromise = util.promisify(this._pool.getConnection).bind(this._pool);
+            let _timeout = false;
+            let dbc = await new Promise(async (resolve, reject) => {
+                let _dbc;
+                if (enqueueTimeout > 0) {
+                    setTimeout(() => {
+                        if (!_dbc) {
+                            console.log('enqueueTimeout failed. NOT Rejecting.');
+                            _timeout = true;
+                            //Rejecting here causes the connections to pile up and never return or release.
+                            //So enqueueTimeout does not guarantee the connection will be released within the given time, only that an error will be 
+                            //returned and the connection will not succeed when it finally gets to the front of the queue.
+                            //reject('enqueueTimeout failed. Rejecting.');
+                        }
+                    }, enqueueTimeout);
+                }
+                _dbc = await connPromise().then((c) => { return new Connection(_connOpts, c, null); })
+                    .catch((e) => { return new Connection(_connOpts, null, e); });
+                if (_timeout) {
+                    _dbc.release();
+                    _dbc.err = { message: 'Connection was cancelled due to enqueueTimeout.' }; //inject our own error 
+                }
+                if (!_dbc)
+                    reject();
+                else
+                    resolve(_dbc);
+            }).catch((err) => {
+                console.log('Connection to server failed:', err);
+                return (null);
             });
-        };
-        Pool.prototype._getPSByHandle = function (handle) {
-            return (this._persistentStatements.find(function (p) { return p.handle == handle; }));
-        };
-        Pool.prototype.hasPersistent = function (handle) {
+            if (_connOpts.timezone)
+                await dbc._query({ sql: `SET SESSION time_zone='${_connOpts.timezone}';` });
+            return (dbc);
+        }
+        _getPSByHandle(handle) {
+            return (this._persistentStatements.find((p) => p.handle == handle));
+        }
+        hasPersistent(handle) {
             return (this._getPSByHandle(handle) ? true : false);
-        };
-        Pool.prototype.preparePersistent = function (handle, opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var _okStatement, conn, _a, q, existing, origOpts, stm;
-                return __generator(this, function (_b) {
-                    switch (_b.label) {
-                        case 0:
-                            _okStatement = this._persistentStatements.find(function (p) { return p.conn.conn && !p.conn.err; });
-                            if (!_okStatement) return [3 /*break*/, 1];
-                            _a = _okStatement.conn;
-                            return [3 /*break*/, 3];
-                        case 1: return [4 /*yield*/, this.getConnection()];
-                        case 2:
-                            _a = _b.sent();
-                            _b.label = 3;
-                        case 3:
-                            conn = _a;
-                            if (!conn || conn.err) {
-                                if (this._connOpts.logQueries)
-                                    console.log(conn);
-                                q = new Query(conn, opts);
-                                q.err = { message: 'Could not get a database connection' };
-                                if (this._connOpts.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(q)];
-                                return [2 /*return*/, (false)];
-                            }
-                            existing = this._getPSByHandle(handle);
-                            if (existing)
-                                this._persistentStatements.splice(this._persistentStatements.indexOf(existing), 1);
-                            opts.uuid = true;
-                            origOpts = Object.assign({}, opts);
-                            return [4 /*yield*/, conn.prepare(opts)];
-                        case 4:
-                            stm = _b.sent();
-                            this._persistentStatements.push({ handle: handle, conn: conn, stm: stm, origOpts: origOpts });
-                            return [2 /*return*/, (true)];
-                    }
-                });
-            });
-        };
-        Pool.prototype.executePersistent = function (handle, values) {
-            return __awaiter(this, void 0, void 0, function () {
-                var ps, qry, ok;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            ps = this._getPSByHandle(handle);
-                            if (!ps)
-                                throw new Error("Cannot execute statement '".concat(handle, "' - statement was not found."));
-                            return [4 /*yield*/, ps.stm.execute(values).catch(function (s) { return s; })];
-                        case 1:
-                            qry = _a.sent();
-                            if (!ps.conn.err) return [3 /*break*/, 6];
-                            return [4 /*yield*/, ps.conn.release()];
-                        case 2:
-                            _a.sent();
-                            return [4 /*yield*/, this.preparePersistent(handle, ps.origOpts)];
-                        case 3:
-                            ok = _a.sent();
-                            if (!ok) return [3 /*break*/, 5];
-                            //The old ps has been replaced on a successful connection. Reference the new one for execution and return.
-                            ps = this._getPSByHandle(handle);
-                            return [4 /*yield*/, ps.stm.execute(values).catch(function (s) { return s; })];
-                        case 4:
-                            qry = _a.sent();
-                            return [3 /*break*/, 6];
-                        case 5:
-                            //The old ps has not been replaced; no connection could be made.
-                            ps.stm.err = { message: 'Could not get a database connection.' };
-                            qry = ps.stm;
-                            _a.label = 6;
-                        case 6:
-                            if (qry.err && this._connOpts.rejectErrors)
-                                return [2 /*return*/, Promise.reject(qry)];
-                            return [2 /*return*/, (qry)];
-                    }
-                });
-            });
-        };
-        Pool.prototype.deallocatePersistent = function (handle) {
-            return __awaiter(this, void 0, void 0, function () {
-                var ps, e_1;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            ps = this._getPSByHandle(handle);
-                            if (!ps)
-                                return [2 /*return*/];
-                            this._persistentStatements.splice(this._persistentStatements.indexOf(ps), 1);
-                            _a.label = 1;
-                        case 1:
-                            _a.trys.push([1, 3, , 4]);
-                            return [4 /*yield*/, ps.stm.deallocate()];
-                        case 2:
-                            _a.sent();
-                            return [3 /*break*/, 4];
-                        case 3:
-                            e_1 = _a.sent();
-                            return [3 /*break*/, 4];
-                        case 4:
-                            if (!!this._persistentStatements.filter(function (p) { return p.conn == ps.conn; }).length) return [3 /*break*/, 6];
-                            return [4 /*yield*/, ps.conn.release()];
-                        case 5:
-                            _a.sent();
-                            _a.label = 6;
-                        case 6: return [2 /*return*/];
-                    }
-                });
-            });
-        };
-        Pool.prototype.exec = function (statementOpts, connOpts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var conn, q_1, q;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0: return [4 /*yield*/, this.getConnection(connOpts, 1000).catch(function (e) { return null; })];
-                        case 1:
-                            conn = _a.sent();
-                            if (!conn || conn.err) {
-                                q_1 = new Query(conn, statementOpts);
-                                q_1.err = { message: 'Could not get a database connection' };
-                                //look at connOpts passed in, if not default to the setting for the pool.
-                                if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors))
-                                    return [2 /*return*/, Promise.reject(q_1)];
-                                return [2 /*return*/, (q_1)];
-                            }
-                            return [4 /*yield*/, conn.exec(statementOpts).catch(function (_q) { return _q; })];
-                        case 2:
-                            q = _a.sent();
-                            conn.release();
-                            if (q.err && conn.opts.rejectErrors)
-                                return [2 /*return*/, (Promise.reject(q))];
-                            return [2 /*return*/, (q)];
-                    }
-                });
-            });
-        };
-        return Pool;
-    }());
+        }
+        async preparePersistent(handle, opts) {
+            let _okStatement = this._persistentStatements.find((p) => p.conn.conn && !p.conn.err);
+            let conn = _okStatement ? _okStatement.conn : await this.getConnection();
+            if (!conn || conn.err) {
+                if (this._connOpts.logQueries)
+                    console.log(conn);
+                let q = new Query(conn, opts);
+                q.err = { message: 'Could not get a database connection' };
+                if (this._connOpts.rejectErrors)
+                    return Promise.reject(q);
+                return (false);
+            }
+            let existing = this._getPSByHandle(handle);
+            if (existing)
+                this._persistentStatements.splice(this._persistentStatements.indexOf(existing), 1);
+            opts.uuid = true;
+            let origOpts = Object.assign({}, opts);
+            let stm = await conn.prepare(opts);
+            this._persistentStatements.push({ handle: handle, conn: conn, stm: stm, origOpts: origOpts });
+            return (true);
+        }
+        async executePersistent(handle, values) {
+            let ps = this._getPSByHandle(handle);
+            if (!ps)
+                throw new Error(`Cannot execute statement '${handle}' - statement was not found.`);
+            let qry = await ps.stm.execute(values).catch((s) => s);
+            if (ps.conn.err) {
+                await ps.conn.release();
+                //for (let f of this._persistentStatements) { console.log(f.handle,f.conn.conn ? f.conn.conn.threadId : 'none') }
+                let ok = await this.preparePersistent(handle, ps.origOpts);
+                if (ok) {
+                    //The old ps has been replaced on a successful connection. Reference the new one for execution and return.
+                    ps = this._getPSByHandle(handle);
+                    qry = await ps.stm.execute(values).catch((s) => s);
+                }
+                else {
+                    //The old ps has not been replaced; no connection could be made.
+                    ps.stm.err = { message: 'Could not get a database connection.' };
+                    qry = ps.stm;
+                }
+            }
+            if (qry.err && this._connOpts.rejectErrors)
+                return Promise.reject(qry);
+            return (qry);
+        }
+        async deallocatePersistent(handle) {
+            let ps = this._getPSByHandle(handle);
+            if (!ps)
+                return;
+            this._persistentStatements.splice(this._persistentStatements.indexOf(ps), 1);
+            try {
+                await ps.stm.deallocate();
+            }
+            catch (e) { }
+            if (!this._persistentStatements.filter((p) => p.conn == ps.conn).length)
+                await ps.conn.release();
+        }
+        async exec(statementOpts, connOpts) {
+            let conn = await this.getConnection(connOpts, 1000).catch((e) => null);
+            if (!conn || conn.err) {
+                let q = new Query(conn, statementOpts);
+                q.err = { message: 'Could not get a database connection' };
+                //look at connOpts passed in, if not default to the setting for the pool.
+                if ((connOpts && connOpts.rejectErrors) || (!connOpts && this._connOpts.rejectErrors))
+                    return Promise.reject(q);
+                return (q);
+            }
+            let q = await conn.exec(statementOpts).catch((_q) => _q);
+            conn.release();
+            if (q.err && conn.opts.rejectErrors)
+                return (Promise.reject(q));
+            return (q);
+        }
+    }
     exports.Pool = Pool;
-    var Query = /** @class */ (function () {
-        function Query(_dbc, _opts) {
+    class Query {
+        _dbc;
+        _opts;
+        err;
+        result;
+        fields;
+        constructor(_dbc, _opts) {
             this._dbc = _dbc;
             this._opts = _opts;
         }
-        return Query;
-    }());
+    }
     exports.Query = Query;
-    var Statement = /** @class */ (function (_super) {
-        __extends(Statement, _super);
-        function Statement(_dbc, _execOpts) {
-            var _this = _super.call(this, _dbc, _execOpts) || this;
-            _this._dbc = _dbc;
-            _this._execOpts = _execOpts;
-            _this.prepID = null; //set from Connection.prepare();
-            _this.keys = null; //set from Connection.prepare();
-            _this.useID = 0;
-            return _this;
+    class Statement extends Query {
+        _dbc;
+        _execOpts;
+        prepID = null; //set from Connection.prepare();
+        keys = null; //set from Connection.prepare();
+        useID = 0;
+        constructor(_dbc, _execOpts) {
+            super(_dbc, _execOpts);
+            this._dbc = _dbc;
+            this._execOpts = _execOpts;
         }
-        Statement.prototype.execute = function (values) {
-            return __awaiter(this, void 0, void 0, function () {
-                var timeout, nestTables, typeCast, v, bindError, vars, varstr, _s, qry, p, _i, vars_1, u, s;
-                var _this = this;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            if (this._execOpts) {
-                                timeout = this._execOpts.timeout;
-                                nestTables = this._execOpts.nestTables;
-                                typeCast = this._execOpts.typeCast;
-                            }
-                            v = [];
-                            if (!this.keys) {
-                                v = values;
-                            }
-                            else if (values) {
-                                v = this.keys.reduce(function (r, k) {
-                                    //kinda like !isset()
-                                    if (values[k.name] === undefined) { //don't throw if it's specified but intentionally null. The one time I've been glad there's a difference!
-                                        _this.err = { message: "EXECUTION ERROR: Bound variable `".concat(k.name, "` is undefined") };
-                                    }
-                                    r.push(values[k.name]);
-                                    return (r);
-                                }, []);
-                                if (this.err) {
-                                    this._dbc.err = this.err;
-                                    if (this._dbc.rejectErrors)
-                                        return [2 /*return*/, Promise.reject(this)];
-                                    return [2 /*return*/, (this)];
-                                }
-                            }
-                            //convert to a standard query.
-                            if (this._execOpts.emulate)
-                                return [2 /*return*/, (this._emulatedExecute({ sql: this._execOpts.sql, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }))];
-                            if (this.prepID === null && !this.err) {
-                                this.err = this._dbc.err = { message: "Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement." };
-                                if (this._dbc.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(this)];
-                                return [2 /*return*/, (this)];
-                            }
-                            return [4 /*yield*/, this._use(v)];
-                        case 1:
-                            vars = _a.sent();
-                            if (this._dbc.err) { //_dbc.err will be set by _use if there's an internal problem with any SET.
-                                this.err = this._dbc.err;
-                                if (this._dbc.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(this)]; //exec error in this part returns the initial setup statement. Error is on the connection.
-                                return [2 /*return*/, (this)];
-                            }
-                            varstr = '';
-                            if (vars.length)
-                                varstr = "USING " + vars.join(',');
-                            _s = "EXECUTE stm_".concat(this.prepID, " ").concat(varstr, ";");
-                            if (this._dbc.logQueries)
-                                console.log(_s);
-                            return [4 /*yield*/, this._dbc._query({ sql: _s, timeout: timeout, nestTables: nestTables, typeCast: typeCast }).catch(function (e) { return (e); })];
-                        case 2:
-                            qry = _a.sent();
-                            this.err = qry.err;
-                            this.result = qry.result;
-                            this.fields = qry.fields;
-                            if (!vars.length) return [3 /*break*/, 4];
-                            p = [];
-                            for (_i = 0, vars_1 = vars; _i < vars_1.length; _i++) {
-                                u = vars_1[_i];
-                                p.push(this._dbc._act('query', { sql: "SET ".concat(u, "=NULL;") }));
-                            }
-                            return [4 /*yield*/, Promise.all(p).catch(function (e) {
-                                    _this._dbc.err = e.err;
-                                    return ([e]);
-                                })];
-                        case 3:
-                            s = _a.sent();
-                            _a.label = 4;
-                        case 4:
-                            if (qry.err && this._dbc.rejectErrors)
-                                return [2 /*return*/, Promise.reject(qry)];
-                            return [2 /*return*/, (qry)];
+        async execute(values) {
+            let timeout, nestTables, typeCast;
+            if (this._execOpts) {
+                timeout = this._execOpts.timeout;
+                nestTables = this._execOpts.nestTables;
+                typeCast = this._execOpts.typeCast;
+            }
+            let v = [];
+            let bindError;
+            if (!this.keys) {
+                v = values;
+            }
+            else if (values) {
+                v = this.keys.reduce((r, k) => {
+                    //kinda like !isset()
+                    if (values[k.name] === undefined) { //don't throw if it's specified but intentionally null. The one time I've been glad there's a difference!
+                        this.err = { message: `EXECUTION ERROR: Bound variable \`${k.name}\` is undefined` };
                     }
+                    r.push(values[k.name]);
+                    return (r);
+                }, []);
+                if (this.err) {
+                    this._dbc.err = this.err;
+                    if (this._dbc.rejectErrors)
+                        return Promise.reject(this);
+                    return (this);
+                }
+            }
+            //convert to a standard query.
+            if (this._execOpts.emulate)
+                return (this._emulatedExecute({ sql: this._execOpts.sql, values: v, timeout: timeout, nestTables: nestTables, typeCast: typeCast }));
+            if (this.prepID === null && !this.err) {
+                this.err = this._dbc.err = { message: `Attempted to execute an unprepared statement. Non-emulated statements returned as new from previously executed ones may not themselves be executed again. This is to prevent a thread race for same-name parameters. You should re-execute the original statement.` };
+                if (this._dbc.rejectErrors)
+                    return Promise.reject(this);
+                return (this);
+            }
+            let vars = await this._use(v);
+            if (this._dbc.err) { //_dbc.err will be set by _use if there's an internal problem with any SET.
+                this.err = this._dbc.err;
+                if (this._dbc.rejectErrors)
+                    return Promise.reject(this); //exec error in this part returns the initial setup statement. Error is on the connection.
+                return (this);
+            }
+            //Create a new execution statement. We return the new one to replace this one.
+            let varstr = '';
+            if (vars.length)
+                varstr = "USING " + vars.join(',');
+            let _s = `EXECUTE stm_${this.prepID} ${varstr};`;
+            if (this._dbc.logQueries)
+                console.log(_s);
+            //_query() / _act() fills in any stm.err as well as the connection's err.
+            let qry = await this._dbc._query({ sql: _s, timeout: timeout, nestTables: nestTables, typeCast: typeCast }).catch((e) => { return (e); });
+            this.err = qry.err;
+            this.result = qry.result;
+            this.fields = qry.fields;
+            //clean up the session vars
+            if (vars.length) {
+                let p = [];
+                for (let u of vars)
+                    p.push(this._dbc._act('query', { sql: `SET ${u}=NULL;` }));
+                let s = await Promise.all(p).catch((e) => {
+                    this._dbc.err = e.err;
+                    return ([e]);
                 });
-            });
-        };
+            }
+            if (qry.err && this._dbc.rejectErrors)
+                return Promise.reject(qry);
+            return (qry);
+        }
         /**
          * Alternate shunt for executing w/o actually setting up a server prepared statement.
          * @param values
          */
-        Statement.prototype._emulatedExecute = function (opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var qry;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            if (!this._dbc.rejectErrors) return [3 /*break*/, 2];
-                            return [4 /*yield*/, this._dbc._act('query', opts).catch(function (s) { return s; })];
-                        case 1:
-                            qry = _a.sent(); //must handle internally
-                            return [3 /*break*/, 4];
-                        case 2: return [4 /*yield*/, this._dbc._act('query', opts)];
-                        case 3:
-                            qry = _a.sent();
-                            _a.label = 4;
-                        case 4:
-                            if (this._dbc.logQueries)
-                                console.log('Executed (emulated):', opts.sql, 'with', opts.values);
-                            //copy the newly generated stm values to this.
-                            this.err = qry.err;
-                            this.result = qry.result;
-                            this.fields = qry.fields;
-                            if (qry.err) {
-                                this._dbc.err = qry.err;
-                                if (this._dbc.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(qry)];
-                            }
-                            return [2 /*return*/, (qry)];
-                    }
-                });
-            });
-        };
+        async _emulatedExecute(opts) {
+            let qry;
+            if (this._dbc.rejectErrors)
+                qry = await this._dbc._act('query', opts).catch((s) => s); //must handle internally
+            else
+                qry = await this._dbc._act('query', opts);
+            if (this._dbc.logQueries)
+                console.log('Executed (emulated):', opts.sql, 'with', opts.values);
+            //copy the newly generated stm values to this.
+            this.err = qry.err;
+            this.result = qry.result;
+            this.fields = qry.fields;
+            if (qry.err) {
+                this._dbc.err = qry.err;
+                if (this._dbc.rejectErrors)
+                    return Promise.reject(qry);
+            }
+            return (qry);
+        }
         /**
          * Sets up the user-allocated vars for the execution and returns a string to put into EXECUTE with those sql vars.
          * @param values
          */
-        Statement.prototype._use = function (values) {
-            return __awaiter(this, void 0, void 0, function () {
-                var vars, p, unsetters, k, _val, _key, _s;
-                var _this = this;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            if (!values || !values.length)
-                                return [2 /*return*/, ([])];
-                            //increment the statement's useID prior to every execution to preserve variables held for other executions.
-                            //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
-                            this.useID++;
-                            vars = [];
-                            p = [];
-                            unsetters = [];
-                            for (k = 0; k < values.length; k++) {
-                                _val = values[k] === null ? null : values[k];
-                                _key = "@".concat(this.prepID, "_").concat(k, "_").concat(this.useID);
-                                _s = "SET ".concat(_key, "=").concat(mysql.escape(_val), ";");
-                                unsetters.push(_key);
-                                if (this._dbc.logQueries)
-                                    console.log(_s);
-                                p.push(this._dbc._act('query', { sql: _s }, true, true)); //SET @a_${useID}=1
-                                vars.push("@".concat(this.prepID, "_").concat(k, "_").concat(this.useID)); //USING @a, @b... returned to the execution statement.
-                            }
-                            //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
-                            return [4 /*yield*/, Promise.all(p).catch(function (e) { _this._dbc.err = e.err; })];
-                        case 1:
-                            //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
-                            _a.sent();
-                            return [2 /*return*/, (vars)];
-                    }
-                });
-            });
-        };
-        Statement.prototype.deallocate = function () {
-            return __awaiter(this, void 0, void 0, function () {
-                var _this = this;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            //Deallocation is crucial when using pooled connections.
-                            if (this._execOpts.emulate)
-                                return [2 /*return*/, (this)];
-                            return [4 /*yield*/, this._dbc._act('query', { sql: "DEALLOCATE PREPARE stm_".concat(this.prepID) }, false, true).catch(function (e) { return _this._dbc.release(); })];
-                        case 1:
-                            _a.sent();
-                            return [2 /*return*/, (this)];
-                    }
-                });
-            });
-        };
-        return Statement;
-    }(Query));
+        async _use(values) {
+            if (!values || !values.length)
+                return ([]);
+            //increment the statement's useID prior to every execution to preserve variables held for other executions.
+            //this allows you to asynchronously call execute with different parameters on the same prepared statement at the same time, and await Promise.all(). 
+            this.useID++;
+            let vars = [];
+            let p = [];
+            let unsetters = [];
+            for (let k = 0; k < values.length; k++) {
+                let _val = values[k] === null ? null : values[k];
+                let _key = `@${this.prepID}_${k}_${this.useID}`;
+                let _s = `SET ${_key}=${mysql.escape(_val)};`;
+                unsetters.push(_key);
+                if (this._dbc.logQueries)
+                    console.log(_s);
+                p.push(this._dbc._act('query', { sql: _s }, true, true)); //SET @a_${useID}=1
+                vars.push(`@${this.prepID}_${k}_${this.useID}`); //USING @a, @b... returned to the execution statement.
+            }
+            //catch this part internally when setting up a prepared statement; return the connection with the actual errr...
+            await Promise.all(p).catch((e) => { this._dbc.err = e.err; });
+            return (vars);
+        }
+        async deallocate() {
+            //Deallocation is crucial when using pooled connections.
+            if (this._execOpts.emulate)
+                return (this);
+            await this._dbc._act('query', { sql: `DEALLOCATE PREPARE stm_${this.prepID}` }, false, true).catch((e) => this._dbc.release());
+            return (this);
+        }
+    }
     exports.Statement = Statement;
-    var Connection = /** @class */ (function () {
-        function Connection(opts, conn, err) {
+    class Connection {
+        opts;
+        conn;
+        err;
+        _lastResult;
+        _lastFields;
+        constructor(opts, conn, err) {
             this.opts = opts;
             this.conn = conn;
             this.err = err;
         }
-        Object.defineProperty(Connection.prototype, "rejectErrors", {
-            get: function () {
-                return (this.opts.rejectErrors);
-            },
-            enumerable: false,
-            configurable: true
-        });
-        Object.defineProperty(Connection.prototype, "logQueries", {
-            get: function () {
-                return (this.opts.logQueries);
-            },
-            enumerable: false,
-            configurable: true
-        });
+        get rejectErrors() {
+            return (this.opts.rejectErrors);
+        }
+        get logQueries() {
+            return (this.opts.logQueries);
+        }
         /**
          * Internal call for acting on the connection. Rewrites the func:string to a call on the conn and returns / rejects with a Query.
          * The statement is never prepared or executed, it is just assembled here from the options and the call's result.
@@ -561,278 +366,162 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
          * @param overwriteResult
          * @param forceRejectErrors
          */
-        Connection.prototype._act = function (func, opts, overwriteResult, forceRejectErrors) {
-            if (overwriteResult === void 0) { overwriteResult = true; }
-            return __awaiter(this, void 0, void 0, function () {
-                var qry, q;
-                var _this = this;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            qry = new Query(this, opts);
-                            if (!this.conn || (this.err && this.err.fatal)) {
-                                qry.err = this.err;
-                                if (this.rejectErrors || forceRejectErrors)
-                                    return [2 /*return*/, Promise.reject(qry)];
-                                return [2 /*return*/, (qry)];
-                            }
-                            q = new Promise(function (resolve) {
-                                _this.conn[func].bind(_this.conn)(opts, function (err, result, fields) {
-                                    if (err) {
-                                        qry.err = err;
-                                        return resolve(null);
-                                    }
-                                    if (overwriteResult) {
-                                        _this._lastResult = result;
-                                        _this._lastFields = fields;
-                                    }
-                                    qry.result = result;
-                                    qry.fields = fields;
-                                    return resolve(null);
-                                });
-                            });
-                            return [4 /*yield*/, q];
-                        case 1:
-                            _a.sent();
-                            //if there's an error, either reject or return this object with the error.
-                            if (qry.err) {
-                                this.err = qry.err;
-                                if (this.rejectErrors || forceRejectErrors)
-                                    return [2 /*return*/, Promise.reject(qry)];
-                            }
-                            return [2 /*return*/, (qry)];
+        async _act(func, opts, overwriteResult = true, forceRejectErrors) {
+            //By definition, 'emulate' is irrelevant for _act statements. They are never prepared, but assembled here and run immediately raw.
+            //For example, PREPARE and EXECUTE are both handled through _act().
+            let qry = new Query(this, opts);
+            if (!this.conn || (this.err && this.err.fatal)) {
+                qry.err = this.err;
+                if (this.rejectErrors || forceRejectErrors)
+                    return Promise.reject(qry);
+                return (qry);
+            }
+            //Automated promisifying strips out the fieldinfo, which we want to retain. Promisify by hand. Always resolve here. Reject later if there's an err.
+            let q = new Promise((resolve) => {
+                this.conn[func].bind(this.conn)(opts, (err, result, fields) => {
+                    if (err) {
+                        qry.err = err;
+                        return resolve(null);
                     }
+                    if (overwriteResult) {
+                        this._lastResult = result;
+                        this._lastFields = fields;
+                    }
+                    qry.result = result;
+                    qry.fields = fields;
+                    return resolve(null);
                 });
             });
-        };
-        Connection.prototype.changeUser = function (opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var c;
-                var _this = this;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            if (!this.conn || (this.err && this.err.fatal)) {
-                                if (this.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(this)];
-                                return [2 /*return*/, (this)];
-                            }
-                            return [4 /*yield*/, util.promisify(this.conn.changeUser).bind(this.conn)(opts).catch(function (e) { _this.err = e; })];
-                        case 1:
-                            c = _a.sent();
-                            if (!c) {
-                                this.release();
-                                if (this.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(this)];
-                            }
-                            return [2 /*return*/, (this)];
+            await q;
+            //if there's an error, either reject or return this object with the error.
+            if (qry.err) {
+                this.err = qry.err;
+                if (this.rejectErrors || forceRejectErrors)
+                    return Promise.reject(qry);
+            }
+            return (qry);
+        }
+        async changeUser(opts) {
+            if (!this.conn || (this.err && this.err.fatal)) {
+                if (this.rejectErrors)
+                    return Promise.reject(this);
+                return (this);
+            }
+            let c = await util.promisify(this.conn.changeUser).bind(this.conn)(opts).catch((e) => { this.err = e; });
+            if (!c) {
+                this.release();
+                if (this.rejectErrors)
+                    return Promise.reject(this);
+            }
+            return (this);
+        }
+        async _query(opts, overwriteResult = true) {
+            //Raw query. Don't call directly. Call exec().
+            //MUST BE FORMATTED WITH ? AND A RAW ARRAY IF USING VALUES. CANNOT INTERPRET A KEYED OBJECT. NOT PREPARED, NOT NULL-SAFE.
+            let qry = await this._act('query', opts, overwriteResult);
+            return (qry);
+        }
+        async prepare(opts) {
+            //opts.values must be ignored by prepare. They may be sent into exec but they can't be passed to the internal prepare _query.
+            let _opts = Object.assign({}, opts);
+            _opts.values = null;
+            let prepID = _opts.uuid ? (0, uuid_1.v4)().replace(/-/g, '') : NameFactory.NUM;
+            let sql = _opts.sql;
+            let keys; //leave statement keys undefined if passing an array of values for ? ...define only if rewriting the query.
+            let bindingRes = BindParser_1.BindParser.InlineBindings(sql);
+            if (bindingRes.bindings.length) {
+                sql = bindingRes.newSql;
+                keys = bindingRes.bindings;
+                if (!_opts.emulate) {
+                    for (let b of bindingRes.bindings) {
+                        if (b.field)
+                            this.err = { message: `ERROR PREPARING STATEMENT. Could not bind ::${b.name}. Table and field bindings can only be used under emulation.` };
                     }
-                });
-            });
-        };
-        Connection.prototype._query = function (opts, overwriteResult) {
-            if (overwriteResult === void 0) { overwriteResult = true; }
-            return __awaiter(this, void 0, void 0, function () {
-                var qry;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0: return [4 /*yield*/, this._act('query', opts, overwriteResult)];
-                        case 1:
-                            qry = _a.sent();
-                            return [2 /*return*/, (qry)];
+                    if (this.err) {
+                        let stm = new Statement(this, _opts);
+                        stm.err = this.err;
+                        if (this.rejectErrors)
+                            return Promise.reject(stm);
+                        return (stm);
                     }
-                });
-            });
-        };
-        Connection.prototype.prepare = function (opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var _opts, prepID, sql, keys, bindingRes, _i, _a, b, stm_1, s, _s, nx, stm;
-                return __generator(this, function (_b) {
-                    switch (_b.label) {
-                        case 0:
-                            _opts = Object.assign({}, opts);
-                            _opts.values = null;
-                            prepID = _opts.uuid ? (0, uuid_1.v4)().replace(/-/g, '') : NameFactory.NUM;
-                            sql = _opts.sql;
-                            bindingRes = BindParser_1.BindParser.InlineBindings(sql);
-                            if (bindingRes.bindings.length) {
-                                sql = bindingRes.newSql;
-                                keys = bindingRes.bindings;
-                                if (!_opts.emulate) {
-                                    for (_i = 0, _a = bindingRes.bindings; _i < _a.length; _i++) {
-                                        b = _a[_i];
-                                        if (b.field)
-                                            this.err = { message: "ERROR PREPARING STATEMENT. Could not bind ::".concat(b.name, ". Table and field bindings can only be used under emulation.") };
-                                    }
-                                    if (this.err) {
-                                        stm_1 = new Statement(this, _opts);
-                                        stm_1.err = this.err;
-                                        if (this.rejectErrors)
-                                            return [2 /*return*/, Promise.reject(stm_1)];
-                                        return [2 /*return*/, (stm_1)];
-                                    }
-                                }
-                            }
-                            /* if (sql.substr(0,6).toLowerCase() != 'update') {
-                                sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g,'$1<$3>$5'); //convert all `field`=? to the null-safe <=>
-                                sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g,'!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
-                            } */
-                            if (_opts.emulate) {
-                                _opts.sql = sql;
-                                s = new Statement(this, _opts);
-                                if (this.logQueries)
-                                    console.log('Prepared (emulated):', sql);
-                                s.keys = keys;
-                                return [2 /*return*/, (s)];
-                            }
-                            _s = "PREPARE stm_".concat(prepID, " FROM ").concat(mysql.escape(sql), ";");
-                            if (this.logQueries)
-                                console.log(_s);
-                            _opts.sql = _s;
-                            return [4 /*yield*/, this._query(_opts, false).catch(function (n) { return n; })];
-                        case 1:
-                            nx = _b.sent();
-                            nx.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
-                            stm = new Statement(this, _opts);
-                            Object.assign(stm, nx);
-                            stm.prepID = prepID;
-                            stm.keys = keys;
-                            if (stm.err && this.rejectErrors)
-                                return [2 /*return*/, Promise.reject(stm)];
-                            return [2 /*return*/, (stm)];
-                    }
-                });
-            });
-        };
-        Connection.prototype.exec = function (opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var stm, qry;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0: return [4 /*yield*/, this.prepare(opts).catch(function (e) { return (e); })];
-                        case 1:
-                            stm = _a.sent();
-                            if (stm.err) {
-                                if (this.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(stm)];
-                                return [2 /*return*/, (stm)];
-                            }
-                            return [4 /*yield*/, stm.execute(opts.values).catch(function (e) { return (e); })];
-                        case 2:
-                            qry = _a.sent();
-                            if (!qry.result || qry.err) {
-                                if (this.rejectErrors)
-                                    return [2 /*return*/, Promise.reject(qry)];
-                                return [2 /*return*/, (qry)];
-                            }
-                            if (!!opts.emulate) return [3 /*break*/, 4];
-                            return [4 /*yield*/, stm.deallocate()];
-                        case 3:
-                            _a.sent();
-                            _a.label = 4;
-                        case 4: return [2 /*return*/, (qry)];
-                    }
-                });
-            });
-        };
-        Connection.prototype.beginTransaction = function (opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var qry;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0: return [4 /*yield*/, this._act('beginTransaction', opts)];
-                        case 1:
-                            qry = _a.sent();
-                            return [2 /*return*/, (qry)];
-                    }
-                });
-            });
-        };
-        Connection.prototype.rollback = function (opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var qry;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0: return [4 /*yield*/, this._act('rollback', opts)];
-                        case 1:
-                            qry = _a.sent();
-                            return [2 /*return*/, (qry)];
-                    }
-                });
-            });
-        };
-        Connection.prototype.commit = function (opts) {
-            return __awaiter(this, void 0, void 0, function () {
-                var qry;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0: return [4 /*yield*/, this._act('commit', opts)];
-                        case 1:
-                            qry = _a.sent();
-                            return [2 /*return*/, (qry)];
-                    }
-                });
-            });
-        };
-        Object.defineProperty(Connection.prototype, "lastInsertID", {
-            get: function () {
-                return (this._lastResult ? this._lastResult.insertId : null);
-            },
-            enumerable: false,
-            configurable: true
-        });
-        Connection.prototype.release = function () {
-            return __awaiter(this, void 0, void 0, function () {
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            if (!this.conn) return [3 /*break*/, 2];
-                            return [4 /*yield*/, this.conn.release()];
-                        case 1:
-                            _a.sent();
-                            _a.label = 2;
-                        case 2:
-                            this.conn = null;
-                            return [2 /*return*/];
-                    }
-                });
-            });
-        };
-        Connection.prototype.end = function () {
-            return __awaiter(this, void 0, void 0, function () {
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            if (!this.conn) return [3 /*break*/, 2];
-                            return [4 /*yield*/, this.conn.end()];
-                        case 1:
-                            _a.sent();
-                            _a.label = 2;
-                        case 2:
-                            this.conn = null;
-                            return [2 /*return*/];
-                    }
-                });
-            });
-        };
-        Connection.prototype.destroy = function () {
-            return __awaiter(this, void 0, void 0, function () {
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            if (!this.conn) return [3 /*break*/, 2];
-                            return [4 /*yield*/, this.conn.destroy()];
-                        case 1:
-                            _a.sent();
-                            _a.label = 2;
-                        case 2:
-                            this.conn = null;
-                            return [2 /*return*/];
-                    }
-                });
-            });
-        };
-        return Connection;
-    }());
+                }
+            }
+            /* if (sql.substr(0,6).toLowerCase() != 'update') {
+                sql = sql.replace(/(\w+|\?\?)(\s+)?(=)(\s+)?(\?)/g,'$1<$3>$5'); //convert all `field`=? to the null-safe <=>
+                sql = sql.replace(/([\w|`|\.|\?\?]+)(\s+)?(!=)(\s+)?(\?)/g,'!($1<=>$5)'); //null-safe inequality, e.g. !(field<=>?), !(`a`.`field`<=>?), !(??<=>?)
+            } */
+            if (_opts.emulate) {
+                _opts.sql = sql;
+                let s = new Statement(this, _opts);
+                if (this.logQueries)
+                    console.log('Prepared (emulated):', sql);
+                s.keys = keys;
+                return (s);
+            }
+            //escape single quotes within the query. Necessary because PREPARE x FROM 'query' surrounds the sent query with single quotes.
+            //sql = sql.replace(/'/g,`\\'`);
+            let _s = `PREPARE stm_${prepID} FROM ${mysql.escape(sql)};`;
+            if (this.logQueries)
+                console.log(_s);
+            _opts.sql = _s;
+            let nx = await this._query(_opts, false).catch((n) => n); //don't overwrite the connection _lastResult or _lastFields with the results of PREPARE queries.
+            nx.result = null; //PREPARE somehow returns an OKPacket even if there's an error. Better to have a null result if it fails.
+            let stm = new Statement(this, _opts);
+            Object.assign(stm, nx);
+            stm.prepID = prepID;
+            stm.keys = keys;
+            if (stm.err && this.rejectErrors)
+                return Promise.reject(stm);
+            return (stm);
+        }
+        async exec(opts) {
+            //Single query on a prepared statement. Deallocates the statement afterwards.
+            let stm = await this.prepare(opts).catch((e) => { return (e); });
+            if (stm.err) {
+                if (this.rejectErrors)
+                    return Promise.reject(stm);
+                return (stm);
+            }
+            let qry = await stm.execute(opts.values).catch((e) => { return (e); });
+            if (!qry.result || qry.err) {
+                if (this.rejectErrors)
+                    return Promise.reject(qry);
+                return (qry);
+            }
+            if (!opts.emulate)
+                await stm.deallocate();
+            return (qry);
+        }
+        async beginTransaction(opts) {
+            let qry = await this._act('beginTransaction', opts);
+            return (qry);
+        }
+        async rollback(opts) {
+            let qry = await this._act('rollback', opts);
+            return (qry);
+        }
+        async commit(opts) {
+            let qry = await this._act('commit', opts);
+            return (qry);
+        }
+        get lastInsertID() {
+            return (this._lastResult ? this._lastResult.insertId : null);
+        }
+        async release() {
+            if (this.conn)
+                await this.conn.release();
+            this.conn = null;
+        }
+        async end() {
+            if (this.conn)
+                await this.conn.end();
+            this.conn = null;
+        }
+        async destroy() {
+            if (this.conn)
+                await this.conn.destroy();
+            this.conn = null;
+        }
+    }
     exports.Connection = Connection;
 });

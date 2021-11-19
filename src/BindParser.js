@@ -11,13 +11,12 @@
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BindParser = void 0;
-    var BindParser = /** @class */ (function () {
-        function BindParser() {
-        }
-        BindParser.ParseBindings = function (sql) {
-            var bindings = [];
-            var i = 0;
-            var lookahead = sql[i];
+    class BindParser {
+        static BindingCharRx = /\w/; //Note: bound names must be only \w strings or parsing will fail. Extend this if needed.
+        static ParseBindings(sql) {
+            let bindings = [];
+            let i = 0;
+            let lookahead = sql[i];
             while (lookahead) {
                 if (isStringDelim(lookahead))
                     parseString();
@@ -31,7 +30,7 @@
                 return char === "'" || char === '"';
             }
             function parseString() {
-                var start = i, delim = lookahead;
+                let start = i, delim = lookahead;
                 consume();
                 while (lookahead) {
                     if (lookahead === '\\') {
@@ -46,11 +45,11 @@
                     }
                     consume();
                 }
-                throw new Error("Underterminated string literal starting at index ".concat(start, "."));
+                throw new Error(`Underterminated string literal starting at index ${start}.`);
             }
             function parseBinding() {
-                var start = i;
-                var field = false;
+                const start = i;
+                let field = false;
                 consume();
                 if (lookahead == ":" && BindParser.BindingCharRx.test(peek())) {
                     consume();
@@ -58,12 +57,12 @@
                 }
                 while (lookahead && BindParser.BindingCharRx.test(lookahead))
                     consume();
-                var name = sql.slice(start + (field ? 2 : 1), i);
+                const name = sql.slice(start + (field ? 2 : 1), i);
                 if (!name.length) {
-                    throw new Error("Invalid binding starting at index ".concat(start, "."));
+                    throw new Error(`Invalid binding starting at index ${start}.`);
                 }
                 bindings.push({
-                    start: start,
+                    start,
                     end: i,
                     name: name,
                     field: field
@@ -75,22 +74,19 @@
             function peek() {
                 return sql[i + 1];
             }
-        };
-        BindParser.InlineBindings = function (sql) {
-            var res = { newSql: '', bindings: this.ParseBindings(sql) };
-            var lastIndex = 0;
-            var replacement;
-            for (var _i = 0, _a = res.bindings; _i < _a.length; _i++) {
-                var binding = _a[_i];
+        }
+        static InlineBindings(sql) {
+            let res = { newSql: '', bindings: this.ParseBindings(sql) };
+            let lastIndex = 0;
+            let replacement;
+            for (const binding of res.bindings) {
                 replacement = binding.field ? "??" : "?";
                 res.newSql += sql.slice(lastIndex, binding.start) + replacement;
                 lastIndex = binding.end;
             }
             res.newSql += sql.slice(lastIndex);
             return (res);
-        };
-        BindParser.BindingCharRx = /\w/; //Note: bound names must be only \w strings or parsing will fail. Extend this if needed.
-        return BindParser;
-    }());
+        }
+    }
     exports.BindParser = BindParser;
 });
