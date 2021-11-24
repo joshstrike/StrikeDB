@@ -9,7 +9,8 @@
 				"$tsc-watch"
 			],
 			"group": "build",
-			"label": "TSC: STRIKEDB"
+			"label": "TSC: STRIKEDB",
+			"runOptions": {"runOn":"folderOpen"}
 		}
 	]
 }
