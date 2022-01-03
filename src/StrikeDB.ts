@@ -5,7 +5,7 @@ import { BindParser, Binding } from './BindParser';
 
 /* Result is left pretty loosely typed. Generally we're expecting either an OKPacket or a row set.
  * A normal SELECT result returns an array like [RowPacket:{}, ...] without an OKPacket. The Result of a normal INSERT/UPDATE is just the OKPacket.
- * Calling a stored procedure is an edge case. It returns nested arrays like: {result:[[RowPacket:{}...]],fields:[[FieldPacket:{}...]],OKPacket}. 
+ * Calling a stored procedure is an edge case. It returns a nested array like: [[RowPacket:{}...],OKPacket]. 
  * StrikeDB does not attempt to normalize this into a mixed object, so you need to drill one level into the result for stored procedures. */
 export type Result = mysql.OkPacket&any[];
 export type Rejection = {err:mysql.MysqlError|{message:string}};
